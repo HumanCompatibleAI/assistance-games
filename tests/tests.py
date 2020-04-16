@@ -38,7 +38,7 @@ def eval_policy(
     return np.mean(rets)
 
 
-def test_four_three_reward():
+def test_fourthree_reward():
     env = envs.FourThreeMaze(horizon=20)
     lower_reward = 1.5
     policy = pbvi(env)
@@ -46,7 +46,7 @@ def test_four_three_reward():
     assert reward > lower_reward
 
 
-def test_two_balls_assistance_problem_reward():
+def test_redblue_assistance_problem_reward():
     env = envs.RedBlueAssistanceProblem()
     # Undiscounted and myopic reward
     target_reward = 1.5
@@ -55,13 +55,13 @@ def test_two_balls_assistance_problem_reward():
     assert abs(reward - target_reward) < 1e-3
 
 
-def test_similar_rewards_four_three():
+def test_similar_rewards_fourthree():
     env = envs.FourThreeMaze(horizon=20)
     solvers = (pbvi, deep_rl_solve)
     _test_similar_rewards(env, solvers)
 
 
-def test_similar_rewards_balls():
+def test_similar_rewards_redblue():
     env = envs.RedBlueAssistanceProblem()
     solvers = (pbvi, pbvi_bs, exact_vi_bs, deep_rl_solve)
     _test_similar_rewards(env, solvers)

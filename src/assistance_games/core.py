@@ -1,11 +1,15 @@
 """Core classes, such as POMDP and AssistanceGame.
 """
 
+import functools
+
 import numpy as np
 import gym
 from gym.spaces import Discrete, Box
+import sparse
+from scipy.special import logsumexp
 
-from assistance_games.utils import sample_distribution, uniform_simplex_sample
+from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_sparse
 
 
 class POMDP(gym.Env):
@@ -70,7 +74,7 @@ class POMDP(gym.Env):
         self.state = sample_distribution(self.transition[self.state, act])
 
         old_belief = self.belief
-        ob = self.sample_obs(act, self.state)
+        ob = self.sample_obs(act, state=old_state, next_state=self.state)
         self.belief = self.update_belief(self.belief, act, ob)
 
         # Observed reward is myopic
@@ -87,11 +91,17 @@ class POMDP(gym.Env):
     def render(self):
         print(self.state)
 
-    def sample_obs(self, act, state):
-        return sample_distribution(self.sensor[act, state])
+    def sample_obs(self, act, state=None, next_state=None):
+        if self.back_sensor is not None:
+            return sample_distribution(self.back_sensor[act, state])
+        else:
+            return sample_distribution(self.sensor[act, next_state])
 
     def update_belief(self, belief, act, ob):
-        new_belief = (belief @ self.transition[:, act, :]) * self.sensor[act, :, ob]
+        if self.back_sensor is not None:
+            new_belief = (belief * self.back_sensor[act, :, ob]) @ self.transition[:, act, :]
+        else:
+            new_belief = (belief @ self.transition[:, act, :]) * self.sensor[act, :, ob]
         new_belief /= new_belief.sum()
         return new_belief
 
@@ -136,47 +146,107 @@ class AssistanceGame:
 
 
 class AssistanceProblem(POMDP):
-    def __init__(self, assistance_game, human_policy_fn):
+    def __init__(self, assistance_game, human_policy_fn, is_sparse=True, define_sensor=False):
         """
         Parameters
         ----------
         assistance_game : AssistanceGame
         human_policy_fn : AssistanceGame -> Reward (np.array[|S|, |A_h|, |A_r|, |S|])
-                                         -> Policy (np.array[|S|, |A|])
+                                         -> Policy (np.array[|S|, |A_h|])
+        is_sparse : Bool
+            Whether the transition and reward matrices are to be sparse.
+
+        For each possible reward, we compute a human policy, and thus
+        we compute the corresponding transition and reward matrices
+        for each (state, robot_action, next_state) tuple.
         """
         ag = assistance_game
+        nAh = ag.human_action_space.n
 
         sensor_space = ag.state_space
+        nS0 = ag.state_space.n
 
         action_space = ag.robot_action_space
-        num_actions = action_space.n
+        nA = action_space.n
 
         num_rewards = len(ag.reward_distribution)
         num_states = ag.state_space.n * num_rewards
         state_space = Discrete(num_states)
+        nS = state_space.n
 
-        sensor = np.zeros((num_actions, num_states, ag.state_space.n))
-        back_sensor = np.zeros((num_actions, num_states, ag.human_action_space.n))
-        transition = np.zeros((num_states, num_actions, num_states))
-        rewards = np.zeros((num_states, action_space.n, num_states))
+        O_shape = (nA, nS, nS0)
+        BO_shape = (nA, nS, nAh)
+        T_shape = (nS, nA, nS)
+        R_shape = (nS, nA, nS)
 
-        for reward_idx, (reward, _) in enumerate(ag.reward_distribution): 
-            human_policy = human_policy_fn(assistance_game, reward)
-            for ag_state in range(ag.state_space.n):
-                state = ag.state_space.n * reward_idx + ag_state
+        if define_sensor:
+            sensor = np.zeros(O_shape)
+        else:
+            sensor = None
 
-                sensor[:, state, ag_state] = 1.0
-                back_sensor[:, state] = human_policy[ag_state]
+        back_sensor = np.zeros(BO_shape)
+        if not is_sparse:
+            transition = np.zeros(T_shape)
+            rewards = np.zeros(R_shape)
 
-                for ag_next_state in range(ag.state_space.n):
-                    next_state = ag.state_space.n * reward_idx + ag_next_state
+            for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
+                human_policy = human_policy_fn(assistance_game, reward)
 
-                    transition[state, :, next_state] = human_policy[ag_state] @ ag.transition[ag_state, :, :, ag_next_state]
-                    rewards[state, :, next_state] = human_policy[ag_state] @ reward[ag_state, :, :, ag_next_state]
+                states_slice = slice(nS0 * rew_idx, nS0 * (rew_idx + 1))
+                states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
+                ground_states = range(nS0)
 
-        reward_distribution = np.array([prob for _, prob in ag.reward_distribution])
-        initial_state_distribution = reward_distribution.reshape(-1, 1) @ ag.initial_state_distribution.reshape(1, -1)
-        initial_state_distribution = initial_state_distribution.reshape(-1)
+                transition[states_slice, :, states_slice] = np.einsum('ij,ijkl->ikl', human_policy, ag.transition)
+                rewards[states_slice, :, states_slice] = np.einsum('ij,ijkl->ikl', human_policy, reward)
+
+                if define_sensor:
+                    sensor[:, states, ground_states] = 1.0
+                back_sensor[:, states] = human_policy
+        else:
+            # This should be doing the exact same thing as the other
+            # branch, but here T and R are sparse matrices.
+            T_coords = [[], [], []]
+            T_data = []
+            R_coords = [[], [], []]
+            R_data = []
+
+            tr = force_sparse(ag.transition)
+
+            for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
+                human_policy = human_policy_fn(assistance_game, reward)
+                ground_states = range(nS0)
+                states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
+                lift_state = lambda state : nS0 * rew_idx + state
+
+                reward = force_sparse(reward)
+                human_policy_sparse = force_sparse(human_policy)
+
+                # sparse.einsum is not implemented; thus we have to iterate
+                # through states with a for loop.
+                for s0 in ground_states:
+                    T0 = sparse.tensordot(human_policy_sparse[s0], tr[s0], axes=(0, 0))
+                    R0 = sparse.tensordot(human_policy_sparse[s0], reward[s0], axes=(0, 0))
+
+                    T_coords[0].extend(lift_state(s0) for _ in T0.coords[0])
+                    T_coords[1].extend(T0.coords[0])
+                    T_coords[2].extend(map(lift_state, T0.coords[1]))
+                    T_data.extend(T0.data)
+
+                    R_coords[0].extend(lift_state(s0) for _ in R0.coords[0])
+                    R_coords[1].extend(R0.coords[0])
+                    R_coords[2].extend(map(lift_state, R0.coords[1]))
+                    R_data.extend(R0.data)
+
+                if define_sensor:
+                    sensor[:, states, ground_states] = 1.0
+                back_sensor[:, states] = human_policy
+
+            transition = sparse.COO(T_coords, T_data, T_shape)
+            rewards = sparse.COO(R_coords, R_data, R_shape)
+
+
+        reward_probs = np.array([prob for _, prob in ag.reward_distribution])
+        initial_state_distribution = np.einsum('i,j->ij', reward_probs, ag.initial_state_distribution).flatten()
 
         discount = ag.discount
         horizon = ag.horizon
@@ -219,8 +289,10 @@ def random_policy_fn(assistance_game, reward):
     return np.full((num_states, num_actions), 1 / num_actions)
 
 
-def hard_value_iteration(assistance_game, reward):
+def get_human_policy(assistance_game, reward, max_discount=0.9, num_iter=30, robot_model='optimal', hard=False):
     ag = assistance_game
+
+    value_iteration_fn = hard_value_iteration if hard else soft_value_iteration
 
     # We want to learn a time independent policy here,
     # so that we get time independent transitions in
@@ -228,25 +300,55 @@ def hard_value_iteration(assistance_game, reward):
     # So we assume/force the game to be infinite horizon
     # and discounted.
     # This should not be an issue for most environments.
-    discount = min(0.9, ag.discount)
-    num_iter = 50
+    discount = min(max_discount, ag.discount)
 
     num_states = ag.state_space.n
     num_actions = ag.human_action_space.n
 
-    # Robot model - we assume here that
-    # the robot acts randomly
-    transition = ag.transition.mean(axis=2)
-    reward = reward.mean(axis=2)
+    # We assume reward depends only on state and actions
+    reward = reward.mean(axis=3)
 
-    Q = np.empty((num_states, num_actions))
-    V = np.zeros(num_states)
-    for t in range(num_iter):
-        for s in range(num_states):
-            for a in range(num_actions):
-                Q[s, a] = transition[s, a, :] @ (reward[s, a, :] + discount * V)
+    # Branch for different robot models
+    if robot_model == 'random':
+        # Human assumes robot acts randomly
+        transition = ag.transition.mean(axis=2)
+        reward = reward.mean(axis=2)
+        policy = value_iteration_fn(transition, reward, discount=discount, num_iter=num_iter)
+    elif robot_model == 'optimal':
+        # Human assumes robot knows reward
+        # and acts optimally
+        T = ag.transition
+        transition = T.reshape((T.shape[0], -1, T.shape[-1]))
+        reward = reward.reshape((T.shape[0], -1))
+
+        full_policy = value_iteration_fn(transition, reward, discount=discount, num_iter=num_iter)
+        policy = full_policy.reshape(T.shape[:-1]).sum(axis=2)
+
+    return policy
+
+def hard_value_iteration(T, R, discount=0.9, num_iter=30):
+    nS, nA, _ = T.shape
+    Q = np.empty((nS, nA))
+    V = np.zeros((nS,))
+
+    for _ in range(num_iter):
+        Q = R + discount * np.tensordot(T, V, axes=(2, 0))
         V = np.max(Q, axis=1)
 
-    policy = np.eye(num_actions)[Q.argmax(axis=1)]
+    policy = np.eye(nA)[Q.argmax(axis=1)]
+    return policy
+
+def soft_value_iteration(T, R, discount=0.9, num_iter=30, beta=1e8):
+    nS, nA, _ = T.shape
+    Q = np.empty((nS, nA))
+    V = np.zeros((nS,))
+
+    for _ in range(num_iter):
+        Q = R + discount * np.tensordot(T, V, axes=(2, 0))
+        V = logsumexp(beta * Q, axis=1) / beta
+
+    policy = np.exp(beta * (Q - V[:, None]))
+    policy /= policy.sum(axis=1, keepdims=True)
+
     return policy
 

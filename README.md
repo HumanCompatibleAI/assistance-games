@@ -46,15 +46,19 @@ For understanding the solvers, I recommend:
 1.  skimming these slides: https://www.cs.cmu.edu/~ggordon/780-fall07/lectures/POMDP_lecture.pdf
 2.  Reading sections 2.2 to 4.1 of this survey: https://www.cs.mcgill.ca/~jpineau/files/jpineau-jaamas12-finalcopy.pdf
 
+## Human Policies:
+
+For computing a human policy, the human has to use the transition matrix from the AssistanceGame, which gives P(s' | a\_h, a\_r, s). Thus, the human needs to have some robot model to be able to compute transitions. This might be something like 'assume robot acts randomly', or 'assume robot has full information', or something more complex - still, it cannot have a perfect model of the robot, since the full robot behavior depends on the results of the POMDP solvers.
 
 ## Back sensors:
 
 Normally, in POMDPs, we have a sensor model that gives probabilities O(o |s', a) of observations, given the action taken and the resulting **next state**. However, we are dealing with a very particular type of POMDP, in which our original state space is fully observable and deterministic, with the only uncertainty being the reward; and since all the information about the reward is contained in the human's actions, we can instead treat the human's actions as observations (this can be done as long as the state is fully determined by the actions (i.e. fixed initial positions and deterministic transitions)).
 
-To do that however, we need a sensor model that relates the **previous state** with the observation, instead of the next state; so we include an optional 'back_sensor', which gives probabilities O'(o' | s, a). This change greatly reduces the complexity of solvers (e.g. in RedBlueAssistanceProblem, it reduces an exponent in the complexity from 24 to 2, changing it from intractable to solvable 1-3 seconds).
+To do that however, we need a sensor model that relates the **previous state** with the observation, instead of the next state; so we include an optional 'back\_sensor', which gives probabilities O'(o' | s, a). This change greatly reduces the complexity of solvers (e.g. in RedBlueAssistanceProblem, it reduces an exponent in the complexity from 24 to 2, changing it from intractable to solvable 1-3 seconds).
 
 
 ## Current limitations:
 
-The main limitation is that all the code assumes that transitions, rewards and sensors are in the form of full matrices. This highly limits how much the code can scale, since a full transition matrix needs |S|**2|A_H||A_R| entries, which for a 4x4 grid with 2 agents and nothing else, this is 1048576 entries (though only 4096 non-zero entries). So, it is necessary to adapt the code to functions (instead of matrices), and maybe also sparse matrices.
+~~The main limitation is that all the code assumes that transitions, rewards and sensors are in the form of full matrices. This highly limits how much the code can scale, since a full transition matrix needs |S|**2|A_H||A_R| entries, which for a 4x4 grid with 2 agents and nothing else, this is 1048576 entries (though only 4096 non-zero entries). So, it is necessary to adapt the code to functions (instead of matrices), and maybe also sparse matrices.~~
 
+Sparse matrices now implemented!

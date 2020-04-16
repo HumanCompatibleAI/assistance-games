@@ -41,12 +41,14 @@ def run(env_name, algo_name, **kwargs):
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : (lambda : envs.FourThreeMaze()),
         'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
+        'wardrobe' : (lambda : envs.WardrobeAssistanceProblem()),
 
     }
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
         'deeprl' : deep_rl_solve,
+        'random' : lambda _ : None,
     }
 
     env = env_fns[env_name]()
