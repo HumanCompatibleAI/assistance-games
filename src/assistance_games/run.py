@@ -1,6 +1,7 @@
 """Minimal script to solve and render an environment.
 """
 
+import functools
 import numpy as np
 import time
 
@@ -41,13 +42,14 @@ def run(env_name, algo_name, **kwargs):
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : (lambda : envs.FourThreeMaze()),
         'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
-        'cakepizza': (lambda : envs.CakePizzaGraphProblem())
-
+        'wardrobe' : (lambda : envs.WardrobeAssistanceProblem()),
+        'cakepizza': (lambda : envs.CakePizzaGraphProblem()),
     }
     algos = {
         'exact' : exact_vi,
-        'pbvi' : pbvi,
+        'pbvi' : functools.partial(pbvi, max_iter=4),
         'deeprl' : deep_rl_solve,
+        'random' : lambda _ : None,
     }
 
     env = env_fns[env_name]()

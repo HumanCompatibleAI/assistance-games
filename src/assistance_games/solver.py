@@ -22,7 +22,7 @@ from scipy.special import softmax
 from scipy.spatial import distance_matrix
 
 from assistance_games.core import POMDPPolicy
-from assistance_games.utils import sample_distribution, uniform_simplex_sample
+from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
 
 Alpha = namedtuple('Alpha', ['vector', 'action'])
 
@@ -45,15 +45,16 @@ def pomdp_value_iteration(
 
     use_back_sensor = use_back_sensor and pomdp.back_sensor is not None
     num_value_iter = min(max_value_iter, get_effective_horizon(pomdp))
+    nS = pomdp.state_space.n
 
     beliefs = None
-    alpha_pairs = None
+    alphas = [Alpha(np.zeros(nS), None)]
     for _ in range(max_iter):
         beliefs = expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
         for _ in range(num_value_iter):
-            alpha_pairs = value_backup_fn(pomdp, alpha_pairs, beliefs, use_back_sensor=use_back_sensor)
+            alphas = value_backup_fn(pomdp, alphas, beliefs, use_back_sensor=use_back_sensor)
 
-    return POMDPPolicy(alpha_pairs)
+    return POMDPPolicy(alphas)
 
 def get_effective_horizon(pomdp, epsilon=1e-3):
     """Effective horizon for the POMDP.
@@ -107,17 +108,17 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     If max_new_beliefs is not None, then len(new_beliefs) <= max_new_beliefs + len(beliefs).
     """
     num_beliefs = len(beliefs)
-    num_actions = pomdp.action_space.n
+    nA = pomdp.action_space.n
     T = pomdp.transition
     O = pomdp.sensor
     new_beliefs = list(beliefs)
     for i in np.random.permutation(num_beliefs)[:max_new_beliefs]:
         belief = beliefs[i]
         candidates = []
-        for action in range(num_actions):
+        for action in range(nA):
             state = sample_distribution(belief)
             next_state = sample_distribution(T[state, action])
-            ob = sample_distribution(O[action, next_state])
+            ob = pomdp.sample_obs(action, state=state, next_state=next_state)
             new_belief = pomdp.update_belief(belief, action, ob)
             candidates.append(new_belief)
 
@@ -131,7 +132,7 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     return new_beliefs
 
 
-def exact_value_backup(pomdp, alpha_pairs, *args, use_back_sensor=False, **kwargs):
+def exact_value_backup(pomdp, alphas, *args, use_back_sensor=False, **kwargs):
     """Performs exact value backup.
 
     This consists of the following phases:
@@ -140,38 +141,23 @@ def exact_value_backup(pomdp, alpha_pairs, *args, use_back_sensor=False, **kwarg
         ii - Compute the new alphas for each action and observation |-> alpha_i mapping.
     2 - Prune alphas that are dominated (i.e. not used for any possible belief).
     """
-    num_states = pomdp.state_space.n
-    num_actions = pomdp.action_space.n
-    disc = pomdp.discount
+    nA = pomdp.action_space.n
     T = pomdp.transition
     O = pomdp.sensor if not use_back_sensor else pomdp.back_sensor
     num_obs = O.shape[-1]
     R = pomdp.rewards
-    R = np.sum(R * T, axis=2)
+    R = force_dense(np.sum(R * T, axis=2))
 
-    if alpha_pairs is None:
-        alpha_pairs = []
-        alphas = [np.zeros(num_states)]
-    else:
-        alphas = [vec for vec, _ in alpha_pairs]
+    obs_alphas = compute_obs_alphas(pomdp, alphas, use_back_sensor)
 
-    obs_alphas = np.empty((num_actions, num_obs, len(alphas), num_states))
-    for a in range(num_actions):
-        for o in range(num_obs):
-            for i, alpha in enumerate(alphas):
-                if use_back_sensor:
-                    obs_alphas[a, o, i] = disc * O[a, :, o] * (T[:, a] @ alpha)
-                else:
-                    obs_alphas[a, o, i] = disc * T[:, a] @ (O[a, :, o] * alpha)
+    new_alphas = []
+    for act in range(nA):
+        new_alpha_vecs = cross_sums(obs_alphas[act], R[:, act])
+        new_alphas.extend([Alpha(vector, act) for vector in new_alpha_vecs])
 
-    new_alpha_pairs = []
-    for act in range(num_actions):
-        vectors = cross_sums(obs_alphas[act], R[:, act])
-        new_alpha_pairs.extend([Alpha(vector, act) for vector in vectors])
-
-    new_alpha_pairs.extend(alpha_pairs)
-    new_alpha_pairs = prune_alphas(new_alpha_pairs)
-    return new_alpha_pairs
+    new_alphas.extend(alphas)
+    new_alphas = prune_alphas(new_alphas)
+    return new_alphas
 
 def cross_sums(V, v0):
     """Returns (v0 + sum(V[i][p[i]] for i in range(n)) for p in permutations(n))."""
@@ -192,29 +178,29 @@ def prune_alphas(alpha_pairs):
     def find_domination_witness(alphas, target):
         """Finds witness for target vector.
         """
-        n_alp = len(alphas)
-        n_states = len(target.vector)
+        nAL = len(alphas)
+        nS = len(target.vector)
 
         if not alphas:
-            belief = np.zeros(n_states)
+            belief = np.zeros(nS)
             belief[0] = 1.0
             return belief
 
-        A_ub = np.zeros((n_alp + n_states + 1, n_states + 1))
-        for A_row, (alp, _) in zip(A_ub[:n_alp], alphas):
+        A_ub = np.zeros((nAL + nS + 1, nS + 1))
+        for A_row, (alp, _) in zip(A_ub[:nAL], alphas):
             A_row[:-1] = alp - target.vector
             A_row[-1] = 1
 
-        A_ub[n_alp:] = (-1) * np.eye(n_states+1)
+        A_ub[nAL:] = (-1) * np.eye(nS+1)
 
-        A_eq = np.ones((1, n_states + 1))
+        A_eq = np.ones((1, nS + 1))
         A_eq[0, -1] = 0
         
         b_eq = np.ones(1)
 
         b = np.zeros(A_ub.shape[0])
         b[-1] = (-1) * 1e-4
-        c = np.zeros(n_states + 1)
+        c = np.zeros(nS + 1)
         c[-1] = -1.0
 
         result = linprog(c, A_ub=A_ub, b_ub=b, A_eq=A_eq, b_eq=b_eq)
@@ -241,7 +227,29 @@ def prune_alphas(alpha_pairs):
     return successes
 
 
-def point_based_value_backup(pomdp, alpha_pairs=None, beliefs=None, use_back_sensor=False):
+def compute_obs_alphas(pomdp, alphas, use_back_sensor):
+    nS = pomdp.state_space.n
+    nA = pomdp.action_space.n
+    disc = pomdp.discount
+    T = pomdp.transition
+    O = pomdp.sensor if not use_back_sensor else pomdp.back_sensor
+    nO = O.shape[-1]
+
+    alpha_vecs = [alpha.vector for alpha in alphas]
+
+    obs_alphas = np.empty((nA, nO, len(alpha_vecs), nS))
+    alpha_matrix = np.array(alpha_vecs).T
+    for a in range(nA):
+        for o in range(nO):
+            if use_back_sensor:
+                obs_alphas[a, o] = disc * (O[a, :, o] * (T[:, a] @ alpha_matrix).T)
+            else:
+                obs_alphas[a, o] = disc * (T[:, a] @ (O[a, :, o, None] * alpha_matrix)).T
+    return obs_alphas
+
+
+
+def point_based_value_backup(pomdp, alphas, beliefs=None, use_back_sensor=False):
     """Performs approximate value backup by tracking a finite set of beliefs.
 
     This consists of the following phases:
@@ -251,38 +259,20 @@ def point_based_value_backup(pomdp, alpha_pairs=None, beliefs=None, use_back_sen
              for each observation using the belief b.
     2 - For each belief, select the alpha that maximizes expected reward.
     """
-    num_states = pomdp.state_space.n
-    num_actions = pomdp.action_space.n
-    disc = pomdp.discount
+    nS = pomdp.state_space.n
+    nA = pomdp.action_space.n
     T = pomdp.transition
     O = pomdp.sensor if not use_back_sensor else pomdp.back_sensor
-    num_obs = O.shape[-1]
+    nO = O.shape[-1]
     R = pomdp.rewards
-    R = np.sum(R * T, axis=2)
-
-    if alpha_pairs is None:
-        alpha_pairs = []
-        alphas = [np.zeros(num_states)]
-    else:
-        alphas = [vec for vec, _ in alpha_pairs]
-
-    def compute_obs_alphas(alpha):
-        obs_alphas = np.empty((num_actions, num_obs, len(alpha), num_states))
-        for a in range(num_actions):
-            for o in range(num_obs):
-                for i, alp in enumerate(alpha):
-                    if use_back_sensor:
-                        obs_alphas[a, o, i] = disc * O[a, :, o] * (T[:, a] @ alp)
-                    else:
-                        obs_alphas[a, o, i] = disc * T[:, a] @ (O[a, :, o] * alp)
-        return obs_alphas
+    R = force_dense(np.sum(R * T, axis=2))
 
     def compute_action_alphas(obs_alphas, beliefs):
-        action_alphas = np.empty((len(beliefs), num_actions, num_states))
+        action_alphas = np.empty((len(beliefs), nA, nS))
         for j, b in enumerate(beliefs):
-            for a in range(num_actions):
+            for a in range(nA):
                 action_alphas[j, a] = R[:, a]
-                for o in range(num_obs):
+                for o in range(nO):
                     action_alphas[j, a] += max(obs_alphas[a, o], key=lambda alpha : alpha @ b)
         return action_alphas
 
@@ -293,11 +283,11 @@ def point_based_value_backup(pomdp, alpha_pairs=None, beliefs=None, use_back_sen
             alpha_pairs.append(Alpha(action_alphas[j, act], act))
         return alpha_pairs
     
-    obs_alphas = compute_obs_alphas(alphas)
+    obs_alphas = compute_obs_alphas(pomdp, alphas, use_back_sensor)
     action_alphas = compute_action_alphas(obs_alphas, beliefs)
-    alpha_pairs = select_best_alphas(action_alphas, beliefs)
+    new_alphas = select_best_alphas(action_alphas, beliefs)
 
-    return alpha_pairs
+    return new_alphas
 
 
 pbvi = functools.partial(

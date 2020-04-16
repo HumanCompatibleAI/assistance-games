@@ -30,6 +30,7 @@ class Grid(rendering.Geom):
 
         self.x_step = (x_end - x_start) / self.cols
         self.y_step = (y_end - y_start) / self.rows
+        self.side = min(abs(self.x_step), abs(self.y_step))
         
         self.x0 = x_start + self.x_step / 2
         self.y0 = y_start + self.y_step / 2
