@@ -77,6 +77,8 @@ class POMDP(gym.Env):
         observed_reward = old_belief @ self.rewards[:, act, :] @ self.belief
         true_reward = self.rewards[old_state, act, self.state]
 
+        print(observed_reward, true_reward)
+
         self.t += 1
         done = self.horizon is not None and self.t >= self.horizon
 
@@ -195,6 +197,7 @@ class AssistanceProblem(POMDP):
         )
         self.num_obs = ag.state_space.n
         self.num_rewards = num_rewards
+        print(rewards)
 
 
 class POMDPPolicy:
@@ -250,3 +253,30 @@ def hard_value_iteration(assistance_game, reward):
     policy = np.eye(num_actions)[Q.argmax(axis=1)]
     return policy
 
+def query_response_cake_pizza(assistance_game, reward):
+    ag = assistance_game
+    num_states = ag.state_space.n
+    num_world_states = ag.num_world_states
+    num_actions = ag.human_action_space.n
+    policy = np.zeros((num_states, num_actions))
+
+    # Hardcoded query response for the simple CakePizza AG.
+    # There are two actions available to the human; if r_pizza > r_cake
+    # the human performs action 0, and otherwise performs action 1.
+    policy[0:num_world_states, 0] = 1
+    print(reward[2, 0, 0, 0], reward[3, 0, 0, 0])
+    if reward[2, 0, 0, 0]>reward[3, 0, 0, 0]:
+        policy[num_world_states:, 0] = 1
+    else:
+        policy[num_world_states:, 1] = 1
+    return policy
+
+
+
+def s_reward_to_saas_reward(state_reward, num_human_actions, num_robot_actions):
+    "state_reward is a 1d vector of length equal to the number of states"
+    num_states = len(state_reward)
+    reward = np.zeros((num_states, num_human_actions, num_robot_actions, num_states))
+    for s in range(num_states):
+        reward[s, :, :, :] = state_reward[s]
+    return reward

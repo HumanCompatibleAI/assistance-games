@@ -7,7 +7,7 @@ from gym.spaces import Discrete, MultiDiscrete
 import numpy as np
 import pkg_resources
 
-from assistance_games.core import POMDP, AssistanceGame, AssistanceProblem, hard_value_iteration
+from assistance_games.core import POMDP, AssistanceGame, AssistanceProblem, hard_value_iteration, query_response_cake_pizza, s_reward_to_saas_reward
 from assistance_games.parser import read_pomdp
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, sample_distribution
@@ -329,3 +329,82 @@ class RedBlueAssistanceProblem(AssistanceProblem):
         self.robot_transform.set_translation(*robot_coords)
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
+
+
+class CakePizzaGraphGame(AssistanceGame):
+    def __init__(self):
+
+        n_world_states = 4
+        self.num_world_states = n_world_states
+        n_world_actions = 2
+        n_queries = 1
+        self.num_queries = n_queries
+
+
+
+        state_space = Discrete(n_world_states + n_world_states * n_queries)
+
+        human_action_space = Discrete(n_queries * 2)
+        robot_action_space = Discrete(n_world_actions + n_queries)
+
+        # mdp transitions for world states: only robot can act, human's action doesn't matter
+        transition = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
+        transition[0, :, 0, 1] = 1
+        transition[0, :, 1, 1] = 1
+        transition[1, :, 0, 2] = 1
+        transition[1, :, 1, 3] = 1
+        transition[2, :, 0, 2] = 1
+        transition[2, :, 1, 2] = 1
+        transition[3, :, 0, 3] = 1
+        transition[3, :, 1, 3] = 1
+
+        # add transitions for the query actions of the robot, and the human response actions in the
+        # n_states*n_queries information states
+        for s in range(n_world_states):
+            for q in range(n_queries):
+                state_idx = n_world_states + s * (q + 1)
+                robot_action_idx = n_world_actions + q
+
+                # transitions to the query states
+                transition[s, :, robot_action_idx, state_idx] = 1
+                # transitions back to the world states
+                transition[state_idx, :, :, s] = 1
+
+        reward0 = np.zeros(state_space.n)
+        reward0[0], reward0[1] = -0.2, -0.1
+        reward0[2], reward0[3] = 2, 1
+        reward0 = s_reward_to_saas_reward(reward0, human_action_space.n, robot_action_space.n)
+
+        reward1 = np.zeros(state_space.n)
+        reward1[0], reward1[1] = -0.2, -0.1
+        reward1[2], reward1[3] = 1, 2
+        reward1 = s_reward_to_saas_reward(reward1, human_action_space.n, robot_action_space.n)
+
+        rewards_dist = [(reward0, 0.5), (reward1, 0.5)]
+        initial_state_dist = np.zeros(state_space.n)
+        initial_state_dist[0] = 1.0
+
+        horizon = 10
+        discount = 0.9
+
+        super().__init__(
+            state_space=state_space,
+            human_action_space=human_action_space,
+            robot_action_space=robot_action_space,
+            transition=transition,
+            reward_distribution=rewards_dist,
+            initial_state_distribution=initial_state_dist,
+            horizon=horizon,
+            discount=discount,
+        )
+
+
+
+class CakePizzaGraphProblem(AssistanceProblem):
+    def __init__(self, human_policy_fn=query_response_cake_pizza):
+        assistance_game = CakePizzaGraphGame()
+        super().__init__(assistance_game=assistance_game, human_policy_fn=human_policy_fn)
+
+
+    def render(self):
+        print('s: ',self.state % 8)

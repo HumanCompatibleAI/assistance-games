@@ -41,6 +41,7 @@ def run(env_name, algo_name, **kwargs):
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : (lambda : envs.FourThreeMaze()),
         'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
+        'cakepizza': (lambda : envs.CakePizzaGraphProblem())
 
     }
     algos = {
