@@ -577,19 +577,19 @@ class WardrobeAssistanceProblem(AssistanceProblem):
 def query_response_cake_pizza(assistance_game, reward):
     ag = assistance_game
     num_states = ag.state_space.n
-    num_world_states = ag.num_world_states
+    n_world_states = ag.n_world_states
     num_actions = ag.human_action_space.n
     policy = np.zeros((num_states, num_actions))
 
     # Hardcoded query response for the simple CakePizza AG.
     # There are two actions available to the human; if r_pizza > r_cake
     # the human performs action 0, and otherwise performs action 1.
-    policy[0:num_world_states, 0] = 1
+    policy[0:n_world_states, 0] = 1
     print(reward[2, 0, 0, 0], reward[3, 0, 0, 0])
     if reward[2, 0, 0, 0]>reward[3, 0, 0, 0]:
-        policy[num_world_states:, 0] = 1
+        policy[n_world_states:, 0] = 1
     else:
-        policy[num_world_states:, 1] = 1
+        policy[n_world_states:, 1] = 1
     return policy
 
 
@@ -604,12 +604,11 @@ def s_reward_to_saas_reward(state_reward, num_human_actions, num_robot_actions):
 
 class CakePizzaGraphGame(AssistanceGame):
     def __init__(self):
-
         n_world_states = 4
-        self.num_world_states = n_world_states
+        self.n_world_states = n_world_states
         n_world_actions = 2
         n_queries = 1
-        self.num_queries = n_queries
+        self.n_queries = n_queries
 
         state_space = Discrete(n_world_states + n_world_states * n_queries)
 
@@ -674,3 +673,137 @@ class CakePizzaGraphProblem(AssistanceProblem):
 
     def render(self):
         print('s: ',self.state % 8)
+
+
+class CakePizzaTimeDependentAG(AssistanceGame):
+    State = namedtuple('State', ['s_w', 'query', 'time'])
+
+    def __init__(self, horizon=20):
+        self.horizon = horizon
+        n_world_states = 4
+        self.n_world_states = n_world_states
+        n_world_actions = 2
+        self.num_world_actions = n_world_actions
+        n_queries = 1
+        self.n_queries = n_queries
+
+        state_space = Discrete((n_world_states + n_world_states * n_queries) * horizon + 1)
+
+        self.state_space = state_space
+        human_action_space = Discrete(n_queries * 2)
+        robot_action_space = Discrete(n_world_actions + n_queries)
+
+        reward0 = np.zeros(state_space.n)
+        reward1 = np.zeros(state_space.n)
+        transition = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
+        for s_idx in range(state_space.n):
+            assert s_idx == self.state_to_state_idx(self.state_idx_to_state(s_idx))
+            reward0[s_idx] = self.reward_fn(s_idx, world_rewards=[0, 0., 1., -1.])
+            reward1[s_idx] = self.reward_fn(s_idx, world_rewards=[0, 0., -1., 1.])
+            for a_r in range(robot_action_space.n):
+                # there is no loop over the human actions as they don't affect the resulting state
+                transition[s_idx, :, a_r, self.transition_state_id(s_idx, a_r)] = 1
+
+        reward0 = s_reward_to_saas_reward(reward0, human_action_space.n, robot_action_space.n)
+        reward1 = s_reward_to_saas_reward(reward1, human_action_space.n, robot_action_space.n)
+        rewards_dist = [(reward0, 0.5), (reward1, 0.5)]
+
+        initial_state_dist = np.zeros(state_space.n)
+        initial_state_dist[0] = 1.0
+
+        discount = 0.9
+
+        super().__init__(
+            state_space=state_space,
+            human_action_space=human_action_space,
+            robot_action_space=robot_action_space,
+            transition=transition,
+            reward_distribution=rewards_dist,
+            initial_state_distribution=initial_state_dist,
+            horizon=horizon,
+            discount=discount,
+        )
+
+    def state_idx_to_state(self, s_idx):
+        # special handling of the absorbing state
+        if s_idx == self.state_space.n:
+            return self.State(s_w=0, query=0, time=self.horizon)
+        time = s_idx // (self.n_world_states * (self.n_queries + 1))
+        s_idx = s_idx % (self.n_world_states * (self.n_queries + 1))
+        s_w = s_idx % self.n_world_states
+        query = s_idx // self.n_world_states
+        return self.State(s_w=s_w, query=query, time=time)
+
+    def state_to_state_idx(self, s):
+        # special handling of the absorbing state
+        if s.time >= self.horizon:
+            return self.state_space.n - 1
+        return s.s_w + self.n_world_states * s.query + (self.n_world_states * (self.n_queries + 1)) * s.time
+
+    def reward_fn(self, s_idx, world_rewards):
+        s = self.state_idx_to_state(s_idx)
+        return world_rewards[s.s_w] if s.query == 0 else 0
+
+    def transition_state(self, s, robot_action):
+        # if the robot is currently waiting for human's response, transition back to the world state
+        # (human action doesn't affect this at all)
+        if s.query > 0:
+            return self.State(s_w=s.s_w, query=0, time=s.time + 1)
+        # if the robot is asking a question, transition to the corresponding query state
+        if robot_action > self.num_world_actions-1:
+            return self.State(s_w=s.s_w,
+                              query=robot_action - self.num_world_actions + 1,
+                              time=s.time + 1)
+        # else do a world state transition
+        else:
+            return self.State(s_w=self.transition_world(s.s_w, robot_action),
+                              query=0,
+                              time=s.time + 1)
+
+    def transition_world(self, s_w, robot_action):
+        # hardcoded for the toy 4-state graph mdp
+        assert type(s_w) is int
+        if s_w == 0: return 1
+        elif s_w == 1:
+            if robot_action == 0: return 2
+            elif robot_action == 1: return 3
+            else: return s_w
+        elif s_w>1: return s_w
+
+    def transition_state_id(self, s_idx, robot_action):
+        ''''given the current state id and the robot action, outputs the id of the next state'''
+        s = self.state_idx_to_state(s_idx)
+        if s.time >= self.horizon - 1:
+            return self.state_space.n - 1
+        # print(s, robot_action, self.transition_state(s, robot_action))
+        return self.state_to_state_idx(self.transition_state(s, robot_action))
+
+
+def query_response_cake_pizza_time_dep(assistance_game, reward):
+    # hardcoded query response for the time-dependent cakepizza game
+    ag = assistance_game
+    num_states = ag.state_space.n
+    num_actions = ag.human_action_space.n
+    policy = np.zeros((num_states, num_actions))
+
+    for s_idx in range(num_states):
+        s = ag.state_idx_to_state(s_idx)
+        if s.query > 0 and s.time >= 5:
+            if reward[2, 0, 0, 0] > reward[3, 0, 0, 0]:
+                policy[s_idx, 0] = 1
+            else:
+                policy[s_idx, 1] = 1
+        else:
+            policy[s_idx, 0] = 1
+    return policy
+
+
+class CakePizzaTimeDependentProblem(AssistanceProblem):
+    def __init__(self, human_policy_fn=query_response_cake_pizza_time_dep):
+        self.assistance_game = CakePizzaTimeDependentAG()
+        super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
+
+    def render(self):
+        game_state = self.assistance_game.state_idx_to_state(self.state % self.assistance_game.state_space.n)
+        print(game_state)
+        #print('s: ', game_state.s_w, 'q :', game_state.query, 't: ', game_state.time)

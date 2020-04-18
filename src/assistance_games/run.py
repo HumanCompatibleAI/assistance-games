@@ -17,7 +17,8 @@ def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, rende
             env.render()
             time.sleep(dt)
 
-    for _ in range(n_episodes):
+    for ep in range(n_episodes):
+        print('starting ep {}'.format(ep))
         ob = env.reset()
         render_fn()
 
@@ -44,6 +45,7 @@ def run(env_name, algo_name, **kwargs):
         'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
         'wardrobe' : (lambda : envs.WardrobeAssistanceProblem()),
         'cakepizza': (lambda : envs.CakePizzaGraphProblem()),
+        'cakepizzatimedep': (lambda: envs.CakePizzaTimeDependentProblem())
     }
     algos = {
         'exact' : exact_vi,
