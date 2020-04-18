@@ -678,9 +678,9 @@ class CakePizzaGraphProblem(AssistanceProblem):
 class CakePizzaTimeDependentAG(AssistanceGame):
     State = namedtuple('State', ['s_w', 'query', 'time'])
 
-    def __init__(self, horizon=20):
+    def __init__(self, horizon=10):
         self.horizon = horizon
-        n_world_states = 4
+        n_world_states = 5
         self.n_world_states = n_world_states
         n_world_actions = 3
         self.num_world_actions = n_world_actions
@@ -693,19 +693,18 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         human_action_space = Discrete(1 + n_queries * 2)
         robot_action_space = Discrete(n_world_actions + n_queries)
 
-        reward0 = np.zeros(state_space.n)
-        reward1 = np.zeros(state_space.n)
+        reward0 = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
+        reward1 = np.zeros_like(reward0)
         transition = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
         for s_idx in range(state_space.n):
-            assert s_idx == self.state_to_state_idx(self.state_idx_to_state(s_idx))
-            reward0[s_idx] = self.reward_fn(s_idx, world_rewards=[0, 0., 1., -1.])
-            reward1[s_idx] = self.reward_fn(s_idx, world_rewards=[0, 0., -1., 1.])
+            s = self.state_idx_to_state(s_idx)
+            assert s_idx == self.state_to_state_idx(s)
             for a_r in range(robot_action_space.n):
                 # there is no loop over the human actions as they don't affect the resulting state
                 transition[s_idx, :, a_r, self.transition_state_id(s_idx, a_r)] = 1
+                reward0[s_idx, :, a_r, :] = self.reward_fn(s, a_r, world_rewards=[0, 0., 2., -1., 0])
+                reward1[s_idx, :, a_r, :] = self.reward_fn(s, a_r, world_rewards=[0, 0., -1., 2., 0])
 
-        reward0 = s_reward_to_saas_reward(reward0, human_action_space.n, robot_action_space.n)
-        reward1 = s_reward_to_saas_reward(reward1, human_action_space.n, robot_action_space.n)
         rewards_dist = [(reward0, 0.5), (reward1, 0.5)]
 
         initial_state_dist = np.zeros(state_space.n)
@@ -740,9 +739,10 @@ class CakePizzaTimeDependentAG(AssistanceGame):
             return self.state_space.n - 1
         return s.s_w + self.n_world_states * s.query + (self.n_world_states * (self.n_queries + 1)) * s.time
 
-    def reward_fn(self, s_idx, world_rewards):
-        s = self.state_idx_to_state(s_idx)
-        return world_rewards[s.s_w] if s.query == 0 else 0
+    def reward_fn(self, s, a_r, world_rewards):
+        # Being in the querying state or doing the no-op or the query action brings no reward.
+        # Because all other world actions change the state, this ensures that the reward is collected only once
+        return world_rewards[s.s_w] if (s.query == 0 and 0 < a_r < self.num_world_actions) else 0
 
     def transition_state(self, s, robot_action):
         # if the robot is currently waiting for human's response, transition back to the world state
@@ -760,18 +760,19 @@ class CakePizzaTimeDependentAG(AssistanceGame):
                               query=0,
                               time=s.time + 1)
 
-    def transition_world(self, s_w, robot_action):
-        # hardcoded for the toy 4-state graph mdp
+    def transition_world(self, world_state, robot_action):
+        # transitions for the toy 5-state graph mdp
+        s_w, a_r = world_state, robot_action
         assert type(s_w) is int
-        # the noop and the query actions don't change the world state
-        if robot_action == 0 or robot_action>=self.num_world_actions: return s_w
+        # the query and the no-op actions don't change the world state
+        if a_r >= self.num_world_actions or a_r == 0: return s_w
 
-        if s_w == 0:
-            return 1
+        if s_w == 0: return 1
         elif s_w == 1:
-            if robot_action == 1: return 2
-            elif robot_action == 2: return 3
-        elif s_w > 1: return s_w
+            if a_r == 1: return 2
+            elif a_r == 2: return 3
+        elif s_w in [2, 3]: return 4
+        elif s_w == 4: return 4
 
     def transition_state_id(self, s_idx, robot_action):
         ''''given the current state id and the robot action, outputs the id of the next state'''
@@ -792,8 +793,8 @@ def query_response_cake_pizza_time_dep(assistance_game, reward):
 
     for s_idx in range(num_states):
         s = ag.state_idx_to_state(s_idx)
-        if s.query > 0 and s.time >= 5:
-            if reward[2, 0, 0, 0] > reward[3, 0, 0, 0]:
+        if s.query > 0 and s.time >= 4:
+            if reward[2, 0, 1, 0] > reward[3, 0, 1, 0]:
                 policy[s_idx, 1] = 1
             else:
                 policy[s_idx, 2] = 1
