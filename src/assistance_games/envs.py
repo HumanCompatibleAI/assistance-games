@@ -678,7 +678,7 @@ class CakePizzaGraphProblem(AssistanceProblem):
 class CakePizzaTimeDependentAG(AssistanceGame):
     State = namedtuple('State', ['s_w', 'query', 'time'])
 
-    def __init__(self, horizon=10):
+    def __init__(self, horizon=20):
         self.horizon = horizon
         n_world_states = 5
         self.n_world_states = n_world_states
@@ -793,7 +793,7 @@ def query_response_cake_pizza_time_dep(assistance_game, reward):
 
     for s_idx in range(num_states):
         s = ag.state_idx_to_state(s_idx)
-        if s.query > 0 and s.time >= 4:
+        if s.query > 0 and s.time >= 14:
             if reward[2, 0, 1, 0] > reward[3, 0, 1, 0]:
                 policy[s_idx, 1] = 1
             else:
@@ -812,4 +812,7 @@ class CakePizzaTimeDependentProblem(AssistanceProblem):
     def render(self):
         game_state = self.assistance_game.state_idx_to_state(self.state % self.assistance_game.state_space.n)
         print(game_state)
+
+
+
         #print('s: ', game_state.s_w, 'q :', game_state.query, 't: ', game_state.time)
