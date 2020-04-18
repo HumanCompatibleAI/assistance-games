@@ -682,7 +682,7 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         self.horizon = horizon
         n_world_states = 4
         self.n_world_states = n_world_states
-        n_world_actions = 2
+        n_world_actions = 3
         self.num_world_actions = n_world_actions
         n_queries = 1
         self.n_queries = n_queries
@@ -690,7 +690,7 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         state_space = Discrete((n_world_states + n_world_states * n_queries) * horizon + 1)
 
         self.state_space = state_space
-        human_action_space = Discrete(n_queries * 2)
+        human_action_space = Discrete(1 + n_queries * 2)
         robot_action_space = Discrete(n_world_actions + n_queries)
 
         reward0 = np.zeros(state_space.n)
@@ -763,16 +763,20 @@ class CakePizzaTimeDependentAG(AssistanceGame):
     def transition_world(self, s_w, robot_action):
         # hardcoded for the toy 4-state graph mdp
         assert type(s_w) is int
-        if s_w == 0: return 1
+        # the noop and the query actions don't change the world state
+        if robot_action == 0 or robot_action>=self.num_world_actions: return s_w
+
+        if s_w == 0:
+            return 1
         elif s_w == 1:
-            if robot_action == 0: return 2
-            elif robot_action == 1: return 3
-            else: return s_w
-        elif s_w>1: return s_w
+            if robot_action == 1: return 2
+            elif robot_action == 2: return 3
+        elif s_w > 1: return s_w
 
     def transition_state_id(self, s_idx, robot_action):
         ''''given the current state id and the robot action, outputs the id of the next state'''
         s = self.state_idx_to_state(s_idx)
+        # absorbing state
         if s.time >= self.horizon - 1:
             return self.state_space.n - 1
         # print(s, robot_action, self.transition_state(s, robot_action))
@@ -790,10 +794,11 @@ def query_response_cake_pizza_time_dep(assistance_game, reward):
         s = ag.state_idx_to_state(s_idx)
         if s.query > 0 and s.time >= 5:
             if reward[2, 0, 0, 0] > reward[3, 0, 0, 0]:
-                policy[s_idx, 0] = 1
-            else:
                 policy[s_idx, 1] = 1
+            else:
+                policy[s_idx, 2] = 1
         else:
+            # no-op
             policy[s_idx, 0] = 1
     return policy
 
