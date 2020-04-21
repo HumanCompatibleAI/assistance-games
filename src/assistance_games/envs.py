@@ -724,9 +724,9 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         )
 
     def state_idx_to_state(self, s_idx):
-        # special handling of the absorbing state
+        # special handling of the absorbing state at the final timestep
         if s_idx == self.state_space.n:
-            return self.State(s_w=0, query=0, time=self.horizon)
+            return self.State(s_w=4, query=0, time=self.horizon)
         time = s_idx // (self.n_world_states * (self.n_queries + 1))
         s_idx = s_idx % (self.n_world_states * (self.n_queries + 1))
         s_w = s_idx % self.n_world_states
@@ -775,7 +775,7 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         elif s_w == 4: return 4
 
     def transition_state_id(self, s_idx, robot_action):
-        ''''given the current state id and the robot action, outputs the id of the next state'''
+        """Given the current state id and the robot action, outputs the id of the next state"""
         s = self.state_idx_to_state(s_idx)
         # absorbing state
         if s.time >= self.horizon - 1:
@@ -784,35 +784,35 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         return self.state_to_state_idx(self.transition_state(s, robot_action))
 
 
-def query_response_cake_pizza_time_dep(assistance_game, reward):
-    # hardcoded query response for the time-dependent cakepizza game
-    ag = assistance_game
-    num_states = ag.state_space.n
-    num_actions = ag.human_action_space.n
-    policy = np.zeros((num_states, num_actions))
+def query_response_cake_pizza_time_dep(time_before_feedback_available=10):
+    def time_dep_policy_fn(assistance_game, reward):
+        """Hardcoded query response for the time-dependent cake-pizza game. If in the querying state and able to give
+        feedback, the human performs action 1 if she prefers cake and action 2 if she prefers pizza. Otherwise the human
+        does action 0, corresponding to no-op"""
+        ag = assistance_game
+        policy = np.zeros((ag.state_space.n, ag.human_action_space.n))
 
-    for s_idx in range(num_states):
-        s = ag.state_idx_to_state(s_idx)
-        if s.query > 0 and s.time >= 14:
-            if reward[2, 0, 1, 0] > reward[3, 0, 1, 0]:
-                policy[s_idx, 1] = 1
+        for s_idx in range(ag.state_space.n):
+            s = ag.state_idx_to_state(s_idx)
+            if s.query > 0 and s.time >= time_before_feedback_available:
+                if reward[2, 0, 1, 0] > reward[3, 0, 1, 0]:
+                    policy[s_idx, 1] = 1
+                else:
+                    policy[s_idx, 2] = 1
             else:
-                policy[s_idx, 2] = 1
-        else:
-            # no-op
-            policy[s_idx, 0] = 1
-    return policy
+                # no-op
+                policy[s_idx, 0] = 1
+        return policy
+    return time_dep_policy_fn
 
 
 class CakePizzaTimeDependentProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=query_response_cake_pizza_time_dep):
-        self.assistance_game = CakePizzaTimeDependentAG()
+    def __init__(self, human_policy_fn=query_response_cake_pizza_time_dep(time_before_feedback_available=10)):
+        self.assistance_game = CakePizzaTimeDependentAG(horizon=20)
         super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
 
     def render(self):
-        game_state = self.assistance_game.state_idx_to_state(self.state % self.assistance_game.state_space.n)
-        print(game_state)
-
-
-
-        #print('s: ', game_state.s_w, 'q :', game_state.query, 't: ', game_state.time)
+        s = self.assistance_game.state_idx_to_state(self.state % self.assistance_game.state_space.n)
+        wanted_meal = ['cake', 'pizza'][self.state // self.assistance_game.state_space.n]
+        s_w_str = ['flour', 'dough', 'cake', 'pizza', 'absorbing']
+        print('s = {}, query = {}, t = {}, human wants {}'.format(s_w_str[s.s_w], s.query, s.time, wanted_meal))
