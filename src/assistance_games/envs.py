@@ -1,6 +1,9 @@
 """Ready-to-use POMDP and AssistanceProblem environments.
 """
 from collections import namedtuple
+from copy import deepcopy
+from itertools import product
+
 import os
 
 import gym
@@ -816,3 +819,160 @@ class CakePizzaTimeDependentProblem(AssistanceProblem):
         wanted_meal = ['cake', 'pizza'][self.state // self.assistance_game.state_space.n]
         s_w_str = ['flour', 'dough', 'cake', 'pizza', 'absorbing']
         print('s = {}, query = {}, t = {}, human wants {}'.format(s_w_str[s.s_w], s.query, s.time, wanted_meal))
+
+
+class CakePizzaGridState(object):
+    '''
+    state of the environment; describes positions of all objects in the env.
+    '''
+    def __init__(self, agent_pos, meal_states, drink_states, timestep, query):
+        """
+        agent_pos: (x, y) tuple for the agent's location
+        meal_states and drink_states: Dictionary mapping position (x, y) tuples to tuples(meal_state, cooking_time_left)
+        """
+        self.agent_pos = agent_pos
+        self.meal_states = meal_states
+        self.drink_states = drink_states
+        self.timestep = timestep
+        self.query = query
+
+    def __eq__(self, other):
+        return isinstance(other, CakePizzaGridState) and \
+            self.agent_pos == other.agent_pos and \
+            self.meal_states == other.meal_states and \
+            self.drink_states == other.drink_states and \
+            self.timestep == other.timestep and \
+            self.query == other.query
+
+    def __hash__(self):
+        def get_vals(dictionary):
+            return tuple([dictionary[loc] for loc in sorted(dictionary.keys())])
+        return hash(self.agent_pos + get_vals(self.meal_states) + get_vals(self.drink_states)
+                    + tuple(self.query) + tuple(self.timestep))
+
+
+class CakePizzaGridAG(AssistanceGame):
+    def __init__(self, spec):
+        self.height = spec.height
+        self.width = spec.width
+        self.init_state = spec.init_state
+        self.meal_locations = spec.meal_locations
+        self.drink_locations = spec.drink_locations
+        self.horizon = spec.horizon
+        self.meal_cooking_time = spec.meal_cooking_time
+        n_world_actions = 7
+        self.n_queries = 2
+        # robot actions are noop, 4 actions for moving, 2 for cooking, and two queries
+        robot_action_space = Discrete(n_world_actions + self.n_queries)
+        # human actions are no-op and binary query responses to the two queries
+        human_action_space = Discrete(1 + self.n_queries * 2)
+
+    def transition_state(self, s, a_h, a_r):
+        s_next = deepcopy(s)
+
+        # action-independent transitions
+        # if current timestep is the env's horizon, transition to the same state (w/o increasing the timestep)
+        if s.timestep == self.horizon: return s
+        s_next.timestep += 1
+        # if currently asking a question, transition to the same state but w/o question
+        if s.query > 0:
+            s_next.query = 0
+            return s_next
+        # If any meal or drink is ready, it is automatically served / transitioned into an own absorbing state.
+        # This way the agent spends only one timestep in a state with pizza / drink, and is rewarded once.
+        for meal_loc in s.meal_states.keys():
+            if s.meal_states[meal_loc] in [(2, 0), (3, 0)]:
+                s.meal_states[meal_loc] = (4, 0)
+        for drink_loc in s.drink_states.keys():
+            if s.drink_states[drink_loc] in [1, 2]:
+                s.drink_states[drink_loc] = 3
+
+        # movement
+        if a_r in [1, 2, 3, 4]:
+            move = [(1, 0), (-1, 0), (0, -1), (0, 1)][a_r - 1]
+            new_pos = (s.agent_pos[0] + move[0], s.agent_pos[1] + move[1])
+            if (0 <= new_pos[0] <= self.height and 0 <= new_pos[1] <= self.width
+                    and new_pos not in self.meal_locations and new_pos not in self.drink_locations):
+                s_next.agent_pos = new_pos
+
+        # cooking
+        elif a_r in [5, 6]:
+            cooking_pos = (s.agent_pos[0], s.agent_pos[1] + 1)
+            # meal
+            if cooking_pos in self.meal_locations:
+                cooking_stage, cooking_time_remaining = s.meal_states[cooking_pos]
+                # make dough
+                if cooking_stage == 0:
+                    s_next.meal_states[cooking_pos] = (1, 0)
+                # bake pizza or cake using dough; start the timer for cooking_time_needed
+                elif cooking_stage == 1:
+                    if a_r == 5:
+                        s_next.meal_states[cooking_pos] = (2, self.meal_cooking_time)
+                    elif a_r == 6:
+                        s_next.meal_states[cooking_pos] = (3, self.meal_cooking_time)
+                elif cooking_stage in [2, 3]:
+                    # tick down the baking timer if it's not 0
+                    if cooking_time_remaining > 0:
+                        s_next.meal_states[cooking_pos] = (cooking_stage, cooking_time_remaining - 1)
+
+            # drink
+            elif cooking_pos in self.drink_locations:
+                if s.drink_states[cooking_pos] == 0:
+                    if a_r == 5:
+                        s_next.drink_states[cooking_pos] = 1
+                    elif a_r == 6:
+                        s_next.drink_states[cooking_pos] = 2
+
+        # asking one of the two queries
+        elif a_r > 6:
+            s_next.query = 1 if a_r == 7 else 2
+
+        return s_next
+
+    def enumerate_states(self):
+        state_dict = {}
+        for x in self.width:
+            for y in self.height:
+                pos = (x, y)
+                # can't be at the same position as a meal or a drink
+                if pos in self.meal_locations or pos in self.drink_locations:
+                    continue
+                for t in range(self.horizon):
+                    for q in range(self.n_queries + 1):
+                        for drink_state in product([0, 1, 2, 3], repeat=len(self.drink_locations)):
+                            for meal_state in product([0, 1, 2, 3, 4], repeat=len(self.meal_locations)):
+                                # TODO iterate over the cooking timer efficiently
+                                for cooking_timer in product(list(range(self.meal_cooking_time)), repeat=len(self.meal_locations)):
+
+
+    def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
+        r = 0
+        for meal_loc in s.meal_states.keys():
+            if (s.meal_states[meal_loc] == (2, 0) and prefer_pizza) or (s.meal_states[meal_loc] == (3, 0) and not prefer_pizza):
+                r += 4
+        for drink_loc in s.drink_states.keys():
+            if (s.drink_states[drink_loc] == 1 and prefer_lemonade) or (s.drink_states[drink_loc] == 2 and not prefer_lemonade):
+                r += 4
+        return r
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
