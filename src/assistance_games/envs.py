@@ -989,6 +989,8 @@ class CakePizzaGridAG(AssistanceGame):
             r += 4
         elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
             r += 2
+        if s.time == self.horizon and (s.drink == 0 or s.meal in [0, 1]):
+            r -= 5
         return r
 
 
@@ -1024,12 +1026,12 @@ class CakePizzaGridProblem(AssistanceProblem):
     def __init__(self):
         spec = self.Spec(height=2,
                          width=2,
-                         meal_pos=(1, 1),
-                         meal_cooking_time=1,
-                         drink_pos=(0, 1),
-                         horizon=14,
+                         meal_pos=(0, 1),
+                         meal_cooking_time=3,
+                         drink_pos=(1, 1),
+                         horizon=10,
                          discount=0.99,
-                         time_before_feedback_available=0)
+                         time_before_feedback_available=4)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
         super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
