@@ -10,7 +10,7 @@ import sparse
 from scipy.special import logsumexp
 
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_sparse
-
+from inspect import signature
 
 class POMDP(gym.Env):
     def __init__(
@@ -192,7 +192,8 @@ class AssistanceProblem(POMDP):
             rewards = np.zeros(R_shape)
 
             for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
-                human_policy = human_policy_fn(assistance_game, reward)
+                kwargs = {'reward_idx': rew_idx}
+                human_policy = human_policy_fn(assistance_game, reward, **kwargs)
 
                 states_slice = slice(nS0 * rew_idx, nS0 * (rew_idx + 1))
                 states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
@@ -215,7 +216,8 @@ class AssistanceProblem(POMDP):
             tr = force_sparse(ag.transition)
 
             for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
-                human_policy = human_policy_fn(assistance_game, reward)
+                kwargs = {'reward_idx': rew_idx}
+                human_policy = human_policy_fn(assistance_game, reward, **kwargs)
                 ground_states = range(nS0)
                 states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
                 lift_state = lambda state : nS0 * rew_idx + state
@@ -291,7 +293,7 @@ def random_policy_fn(assistance_game, reward):
     return np.full((num_states, num_actions), 1 / num_actions)
 
 
-def get_human_policy(assistance_game, reward, max_discount=0.9, num_iter=30, robot_model='optimal', hard=False):
+def get_human_policy(assistance_game, reward, max_discount=0.9, num_iter=30, robot_model='optimal', hard=False, **kwargs):
     ag = assistance_game
 
     value_iteration_fn = hard_value_iteration if hard else soft_value_iteration
@@ -328,7 +330,7 @@ def get_human_policy(assistance_game, reward, max_discount=0.9, num_iter=30, rob
 
     return policy
 
-def hard_value_iteration(T, R, discount=0.9, num_iter=30):
+def hard_value_iteration(T, R, discount=0.9, num_iter=30, **kwargs):
     nS, nA, _ = T.shape
     Q = np.empty((nS, nA))
     V = np.zeros((nS,))
@@ -340,7 +342,7 @@ def hard_value_iteration(T, R, discount=0.9, num_iter=30):
     policy = np.eye(nA)[Q.argmax(axis=1)]
     return policy
 
-def soft_value_iteration(T, R, discount=0.9, num_iter=30, beta=1e8):
+def soft_value_iteration(T, R, discount=0.9, num_iter=30, beta=1e8, **kwargs):
     nS, nA, _ = T.shape
     Q = np.empty((nS, nA))
     V = np.zeros((nS,))
