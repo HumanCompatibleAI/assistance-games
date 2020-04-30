@@ -11,6 +11,8 @@ from scipy.special import logsumexp
 
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_sparse
 
+# This class is getting complicated. It might be worth to spend sometime
+# thinking if there are good ways to simplify it.
 
 class POMDP(gym.Env):
     def __init__(
@@ -26,6 +28,7 @@ class POMDP(gym.Env):
         horizon=None,
         back_sensor=None,
         discount=1.0,
+        use_belief_space=True,
     ):
         """Partially Observable Markov Decision Process environment.
 
@@ -42,6 +45,8 @@ class POMDP(gym.Env):
         initial_belief : np.array[|S|]
         horizon : Float
         discount : Float
+        use_belief_space : Bool
+            Whether environment is treated as a POMDP or a belief-space MDP.
         """
         if initial_belief is None:
             initial_belief = initial_state_distribution
@@ -61,11 +66,12 @@ class POMDP(gym.Env):
 
         self.belief_space = Box(low=0.0, high=1.0, shape=(state_space.n,))
 
+        self.use_belief_space = use_belief_space
+
     def reset(self):
         self.state = sample_distribution(self.initial_state_distribution)
         self.t = 0
-        self.belief = self.initial_belief
-        return self.belief
+        return self.get_env_ob()
 
     def step(self, act):
         assert act in self.action_space
@@ -73,29 +79,52 @@ class POMDP(gym.Env):
         old_state = self.state
         self.state = sample_distribution(self.transition[self.state, act])
 
-        old_belief = self.belief
-        ob = self.sample_obs(act, state=old_state, next_state=self.state)
-        self.belief = self.update_belief(self.belief, act, ob)
+        self.update(old_state, act, self.state)
 
-        # Observed reward is myopic
-        observed_reward = old_belief @ self.rewards[:, act, :] @ self.belief
-        true_reward = self.rewards[old_state, act, self.state]
+        reward = self.get_reward(old_state, act, self.state)
 
         self.t += 1
         done = self.horizon is not None and self.t >= self.horizon
 
-        info = {'ob' : ob, 'true_reward' : true_reward}
+        # info = {'ob' : ob, 'true_reward' : true_reward}
+        info = {}
 
-        return self.belief, observed_reward, done, info
-        
+        return self.get_env_ob(), reward, done, info
+
+    def get_env_ob(self):
+        if self.use_belief_space:
+            if self.t == 0:
+                self.belief = self.initial_belief
+            return self.belief
+        else:
+            if self.t == 0:
+                # This is a workaround, since traditionally POMDPs do not have an
+                # initial observation, but there is one for gym environments.
+                self.belief = None
+                act = self.action_space.sample()
+                self.last_ob = self.sample_obs(act=act, state=self.state, next_state=self.state)
+            return self.last_ob
+
+    def update(self, state=None, act=None, next_state=None):
+        ob = self.sample_obs(act, state=state, next_state=next_state)
+        if self.use_belief_space:
+            self.old_belief = self.belief
+            self.belief = self.update_belief(self.belief, act, ob)
+
+    def get_reward(self, state=None, act=None, next_state=None):
+        # observed_reward = self.old_belief @ self.rewards[:, act, :] @ self.belief
+        true_reward = self.rewards[state, act, next_state]
+        return true_reward
+
     def render(self):
         print(self.state)
 
-    def sample_obs(self, act, state=None, next_state=None):
+    def sample_obs(self, act=None, state=None, next_state=None):
         if self.back_sensor is not None:
-            return sample_distribution(self.back_sensor[act, state])
+            self.last_ob = sample_distribution(self.back_sensor[act, state])
         else:
-            return sample_distribution(self.sensor[act, next_state])
+            self.last_ob = sample_distribution(self.sensor[act, next_state])
+        return self.last_ob
 
     def update_belief(self, belief, act, ob):
         if self.back_sensor is not None:
@@ -107,7 +136,15 @@ class POMDP(gym.Env):
 
     @property
     def observation_space(self):
-        return self.belief_space
+        if self.use_belief_space:
+            return self.belief_space
+        else:
+            if self.back_sensor is not None:
+                num_obs = self.back_sensor.shape[-1]
+            else:
+                num_obs = self.sensor.shape[-1]
+
+            return Discrete(num_obs)
 
 
 class AssistanceGame:
@@ -146,7 +183,12 @@ class AssistanceGame:
 
 
 class AssistanceProblem(POMDP):
-    def __init__(self, assistance_game, human_policy_fn, is_sparse=True, define_sensor=False):
+    def __init__(self,
+    assistance_game,
+    human_policy_fn,
+    is_sparse=True,
+    define_sensor=False,
+):
         """
         Parameters
         ----------
@@ -155,6 +197,8 @@ class AssistanceProblem(POMDP):
                                          -> Policy (np.array[|S|, |A_h|])
         is_sparse : Bool
             Whether the transition and reward matrices are to be sparse.
+        define_sensor: Bool
+            Whether to define the sensor model, which is only needed if back_sensor is not used.
 
         For each possible reward, we compute a human policy, and thus
         we compute the corresponding transition and reward matrices

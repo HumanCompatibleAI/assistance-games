@@ -565,9 +565,10 @@ class WardrobeAssistanceProblem(AssistanceProblem):
             bar.set_color(0.7, 0.3, 0.3)
             self.viewer.add_onetime(bar)
 
-        reward_beliefs = self.belief.reshape(-1, nS0).sum(axis=1)
+        if self.belief is not None:
+            reward_beliefs = self.belief.reshape(-1, nS0).sum(axis=1)
 
-        for pos, ratio in zip(self.assistance_game.targets, reward_beliefs):
-            add_bar(pos, ratio)
+            for pos, ratio in zip(self.assistance_game.targets, reward_beliefs):
+                add_bar(pos, ratio)
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')

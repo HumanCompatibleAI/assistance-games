@@ -6,7 +6,7 @@ import time
 
 import assistance_games.envs as envs
 from assistance_games.parser import read_pomdp
-from assistance_games.solver import pbvi, exact_vi, deep_rl_solve
+from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
 
@@ -53,6 +53,11 @@ def run(env_name, algo_name, **kwargs):
 
     env = env_fns[env_name]()
     algo = algos[algo_name]
+
+    if algo_name == 'deeprl':
+        env.use_belief_space = False
+        # Necessary for using LSTMs
+        env = get_venv(env)
 
     policy = algo(env)
     run_environment(env, policy, dt=0.5, n_episodes=100)
