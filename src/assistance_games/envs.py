@@ -1027,11 +1027,11 @@ class CakePizzaGridProblem(AssistanceProblem):
         spec = self.Spec(height=2,
                          width=2,
                          meal_pos=(0, 1),
-                         meal_cooking_time=3,
+                         meal_cooking_time=2,
                          drink_pos=(1, 1),
-                         horizon=10,
+                         horizon=12,
                          discount=0.99,
-                         time_before_feedback_available=4)
+                         time_before_feedback_available=0)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
         super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)

@@ -45,7 +45,8 @@ def run(env_name, algo_name, **kwargs):
         'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
         'wardrobe' : (lambda : envs.WardrobeAssistanceProblem()),
         'cakepizza': (lambda : envs.CakePizzaGraphProblem()),
-        'cakepizzatimedep': (lambda: envs.CakePizzaTimeDependentProblem())
+        'cakepizzatimedep': (lambda: envs.CakePizzaTimeDependentProblem()),
+        'cakepizzagrid': (lambda: envs.CakePizzaGridProblem())
     }
     algos = {
         'exact' : exact_vi,
