@@ -993,6 +993,10 @@ class CakePizzaGridAG(AssistanceGame):
             r -= 5
         return r
 
+    def get_state_features(self, s):
+        # s is the flat namedtuple state
+        return np.asarray(s, dtype='float32')
+
 
 def human_response_cake_pizza_grid(time_before_feedback_available=10):
     def time_dep_policy_fn(assistance_game, reward, **kwargs):
