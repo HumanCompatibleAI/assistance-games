@@ -39,9 +39,9 @@ def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, rende
 def run(env_name, algo_name, **kwargs):
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
-        'fourthree' : (lambda : envs.FourThreeMaze()),
-        'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
-        'wardrobe' : (lambda : envs.WardrobeAssistanceProblem()),
+        'fourthree' : envs.FourThreeMaze,
+        'redblue' : envs.RedBlueAssistanceProblem,
+        'wardrobe' : envs.WardrobeAssistanceProblem,
 
     }
     algos = {
@@ -51,13 +51,16 @@ def run(env_name, algo_name, **kwargs):
         'random' : lambda _ : None,
     }
 
-    env = env_fns[env_name]()
     algo = algos[algo_name]
 
     if algo_name == 'deeprl':
-        env.use_belief_space = False
+        # We want deeprl to learn the optimal policy without
+        # being helped on tracking beliefs
+        env = env_fns[env_name](use_belief_space=False)
         # Necessary for using LSTMs
         env = get_venv(env)
+    else:
+        env = env_fns[env_name](use_belief_space=True)
 
     policy = algo(env)
     run_environment(env, policy, dt=0.5, n_episodes=100)

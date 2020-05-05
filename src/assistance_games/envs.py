@@ -9,7 +9,18 @@ import numpy as np
 import pkg_resources
 import sparse
 
-from assistance_games.core import POMDP, AssistanceGame, AssistanceProblem, get_human_policy
+from functools import partial
+
+from assistance_games.core import (
+    POMDP,
+    AssistanceGame,
+    AssistanceProblem,
+    get_human_policy,
+    BeliefObservationModel,
+    FeatureSenseObservationModel,
+    discrete_reward_model_fn_builder,
+)
+
 from assistance_games.parser import read_pomdp
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, sample_distribution, dict_to_sparse
@@ -88,7 +99,7 @@ class FourThreeMaze(POMDP):
     good = +1 reward, bad = -1 penalty, 
     """
 
-    def __init__(self, terminal=False, horizon=None, sample_ob_on_reset=False):
+    def __init__(self, *args, terminal=False, horizon=None, **kwargs):
         if terminal:
             pomdp = read_pomdp(get_asset('pomdps/four-three-terminal.pomdp'))
         else:
@@ -96,7 +107,6 @@ class FourThreeMaze(POMDP):
         self.__dict__ = pomdp.__dict__
         if horizon is not None:
             self.horizon = horizon
-        self.sample_ob_on_reset = sample_ob_on_reset
         self.viewer = None
 
     def render(self, mode='human'):
@@ -264,10 +274,25 @@ class RedBlueAssistanceGame(AssistanceGame):
 
 
 class RedBlueAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=get_human_policy):
+    def __init__(self, human_policy_fn=get_human_policy, use_belief_space=True):
         assistance_game = RedBlueAssistanceGame()
-        super().__init__(assistance_game=assistance_game, human_policy_fn=human_policy_fn, is_sparse=False)
 
+        if use_belief_space:
+            observation_model_fn = BeliefObservationModel
+        else:
+            feature_extractor = lambda state : state % assistance_game.state_space.n
+            setattr(feature_extractor, 'n', assistance_game.state_space.n)
+            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+
+        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
+
+        super().__init__(
+            assistance_game=assistance_game,
+            human_policy_fn=human_policy_fn,
+            observation_model_fn=observation_model_fn,
+            reward_model_fn_builder=reward_model_fn_builder,
+        )
+        self.ag_state_space_n = assistance_game.state_space.n
 
     def render(self, mode='human'):
         human_grid_pos = [(1, -1), (1, 0), (0, 0), (2, 0)]
@@ -322,7 +347,7 @@ class RedBlueAssistanceProblem(AssistanceProblem):
             robot.add_attr(self.robot_transform)
             self.viewer.add_geom(robot)
 
-        ob = self.state % self.num_obs
+        ob = self.state % self.ag_state_space_n
         human_state = ob // 3
         robot_state = ob % 3
 
@@ -499,9 +524,24 @@ class WardrobeAssistanceGame(AssistanceGame):
 
 
 class WardrobeAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=get_human_policy):
+    def __init__(self, human_policy_fn=get_human_policy, use_belief_space=True):
         self.assistance_game = WardrobeAssistanceGame()
-        super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
+
+        if use_belief_space:
+            observation_model_fn = BeliefObservationModel
+        else:
+            feature_extractor = lambda state : state % self.assistance_game.state_space.n
+            setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
+            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+
+        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
+
+        super().__init__(
+            assistance_game=self.assistance_game,
+            human_policy_fn=human_policy_fn,
+            observation_model_fn=observation_model_fn,
+            reward_model_fn_builder=reward_model_fn_builder,
+        )
 
 
     def render(self, mode='human'):
@@ -565,8 +605,8 @@ class WardrobeAssistanceProblem(AssistanceProblem):
             bar.set_color(0.7, 0.3, 0.3)
             self.viewer.add_onetime(bar)
 
-        if self.belief is not None:
-            reward_beliefs = self.belief.reshape(-1, nS0).sum(axis=1)
+        if hasattr(self.observation_model, 'belief'):
+            reward_beliefs = self.observation_model.belief.reshape(-1, nS0).sum(axis=1)
 
             for pos, ratio in zip(self.assistance_game.targets, reward_beliefs):
                 add_bar(pos, ratio)

@@ -5,146 +5,300 @@ import functools
 
 import numpy as np
 import gym
-from gym.spaces import Discrete, Box
+from gym.spaces import Discrete, MultiDiscrete, Box
 import sparse
 from scipy.special import logsumexp
 
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_sparse
 
-# This class is getting complicated. It might be worth to spend sometime
-# thinking if there are good ways to simplify it.
 
-class POMDP(gym.Env):
-    def __init__(
-        self,
-        state_space,
-        sensor_space,
-        action_space,
-        transition,
-        sensor,
-        rewards,
-        initial_state_distribution,
-        initial_belief=None,
-        horizon=None,
-        back_sensor=None,
-        discount=1.0,
-        use_belief_space=True,
-    ):
-        """Partially Observable Markov Decision Process environment.
 
-        Parameters
-        ----------
-        state_space : gym.spaces.Discrete, S
-        sensor_space : gym.spaces.Discrete, O
-        action_space : gym.spaces.Discrete, A
-        transition : np.array[|S|, |A|, |S|]
-        rewards : np.array[|S|, |A|, |S|]
-        sensor : np.array[|A|, |S|, |O|]
-        back_sensor : np.array[|A|, |S|, |O'|]
-        initial_state_distribution : np.array[|S|]
-        initial_belief : np.array[|S|]
-        horizon : Float
-        discount : Float
-        use_belief_space : Bool
-            Whether environment is treated as a POMDP or a belief-space MDP.
-        """
-        if initial_belief is None:
-            initial_belief = initial_state_distribution
+class DiscreteDistribution(Discrete):
+    def __init__(self, n, p=None):
+        if p is None:
+            p = (1/n) * np.ones(n)
 
-        self.state_space = state_space
-        self.sensor_space = sensor_space
-        self.action_space = action_space
-        self.transition = transition
+        super().__init__(n)
+        self.p = p
+
+    def sample_initial_state(self):
+        return sample_distribution(self.p)
+
+    def distribution(self):
+        return self.p
+
+
+##### Begin models
+
+
+### Transition models
+
+class TransitionModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class TabularTransitionModel(TransitionModel):
+    def __init__(self, pomdp, transition_matrix):
+        super().__init__(pomdp)
+        self.transition_matrix = transition_matrix
+
+    @property
+    def T(self):
+        return self.transition_matrix
+
+    def __call__(self):
+        s = self.pomdp.state
+        a = self.pomdp.action
+        return sample_distribution(self.T[s, a])
+
+    def transition_belief(self, belief, action):
+        return belief @ self.T[:, action, :]
+
+
+### Observation models
+
+class ObservationModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class BeliefObservationModel(ObservationModel):
+    def __init__(self, pomdp):
+        super().__init__(pomdp)
+        self.belief = None
+        self.prev_belief = None
+
+    def __call__(self):
+        self.prev_belief = self.belief
+        if self.pomdp.t == 0:
+            self.belief = self.pomdp.state_space.distribution()
+        else:
+            self.belief = self.pomdp.sensor_model.update_belief(self.belief)
+        return self.belief
+
+    @property
+    def space(self):
+        return Box(low=0.0, high=1.0, shape=(self.pomdp.state_space.n,))
+
+class SenseObservationModel(ObservationModel):
+    def __call__(self):
+        return self.sensor_model.sense
+
+    @property
+    def space(self):
+        return self.pomdp.sensor_model.space
+
+class FeatureSenseObservationModel(ObservationModel):
+    def __init__(self, pomdp, feature_extractor):
+        super().__init__(pomdp)
+        self.feature_extractor = feature_extractor
+
+    def __call__(self):
+        feature = self.feature_extractor(self.pomdp.state)
+
+        sense = self.pomdp.sensor_model.sense
+        if sense is None:
+            sense = self.pomdp.sensor_model.space.sample()
+
+        return np.array([feature, sense])
+
+    @property
+    def space(self):
+        num_senses = self.pomdp.sensor_model.space.n
+        num_features = self.feature_extractor.n
+        return MultiDiscrete([num_features, num_senses])
+
+
+### Sensor models
+
+class SensorModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class TabularForwardSensorModel(SensorModel):
+    def __init__(self, pomdp, sensor):
+        self.pomdp = pomdp
         self.sensor = sensor
-        self.back_sensor = back_sensor
-        self.rewards = rewards
-        self.horizon = horizon
-        self.initial_state_distribution = initial_state_distribution
-        self.initial_belief = initial_belief
-        self.discount = discount
-        self.viewer = None
+        self.sense = None
 
-        self.belief_space = Box(low=0.0, high=1.0, shape=(state_space.n,))
+    def __call__(self):
+        return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
 
-        self.use_belief_space = use_belief_space
+    def sample_sense(self, *, state=None, action=None, next_state=None):
+        self.sense = sample_distribution(self.sensor[action, next_state])
+        return self.sense
 
-    def reset(self):
-        self.state = sample_distribution(self.initial_state_distribution)
-        self.t = 0
-        return self.get_env_ob()
+    def update_belief(self, belief, action=None, sense=None):
+        if action is None:
+            action = self.pomdp.action
+        if sense is None:
+            sense = self.sense
 
-    def step(self, act):
-        assert act in self.action_space
-
-        old_state = self.state
-        self.state = sample_distribution(self.transition[self.state, act])
-
-        self.update(old_state, act, self.state)
-
-        reward = self.get_reward(old_state, act, self.state)
-
-        self.t += 1
-        done = self.horizon is not None and self.t >= self.horizon
-
-        # info = {'ob' : ob, 'true_reward' : true_reward}
-        info = {}
-
-        return self.get_env_ob(), reward, done, info
-
-    def get_env_ob(self):
-        if self.use_belief_space:
-            if self.t == 0:
-                self.belief = self.initial_belief
-            return self.belief
-        else:
-            if self.t == 0:
-                # This is a workaround, since traditionally POMDPs do not have an
-                # initial observation, but there is one for gym environments.
-                self.belief = None
-                act = self.action_space.sample()
-                self.last_ob = self.sample_obs(act=act, state=self.state, next_state=self.state)
-            return self.last_ob
-
-    def update(self, state=None, act=None, next_state=None):
-        ob = self.sample_obs(act, state=state, next_state=next_state)
-        if self.use_belief_space:
-            self.old_belief = self.belief
-            self.belief = self.update_belief(self.belief, act, ob)
-
-    def get_reward(self, state=None, act=None, next_state=None):
-        # observed_reward = self.old_belief @ self.rewards[:, act, :] @ self.belief
-        true_reward = self.rewards[state, act, next_state]
-        return true_reward
-
-    def render(self):
-        print(self.state)
-
-    def sample_obs(self, act=None, state=None, next_state=None):
-        if self.back_sensor is not None:
-            self.last_ob = sample_distribution(self.back_sensor[act, state])
-        else:
-            self.last_ob = sample_distribution(self.sensor[act, next_state])
-        return self.last_ob
-
-    def update_belief(self, belief, act, ob):
-        if self.back_sensor is not None:
-            new_belief = (belief * self.back_sensor[act, :, ob]) @ self.transition[:, act, :]
-        else:
-            new_belief = (belief @ self.transition[:, act, :]) * self.sensor[act, :, ob]
+        new_belief = self.pomdp.transition_model.transition_belief(belief, action=action) * self.sensor[action, :, sense]
         new_belief /= new_belief.sum()
         return new_belief
 
     @property
-    def observation_space(self):
-        if self.use_belief_space:
-            return self.belief_space
-        else:
-            if self.back_sensor is not None:
-                num_obs = self.back_sensor.shape[-1]
-            else:
-                num_obs = self.sensor.shape[-1]
+    def space(self):
+        num_senses = self.sensor.shape[-1]
+        return Discrete(num_senses)
 
-            return Discrete(num_obs)
+
+class TabularBackwardSensorModel(SensorModel):
+    def __init__(self, pomdp, back_sensor):
+        self.pomdp = pomdp
+        self.back_sensor = back_sensor
+        self.sense = None
+
+    def __call__(self):
+        return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
+
+    def sample_sense(self, *, state=None, action=None, next_state=None):
+        self.sense = sample_distribution(self.back_sensor[action, state])
+        return self.sense
+
+    def update_belief(self, belief, action=None, sense=None):
+        if action is None:
+            action = self.pomdp.action
+        if sense is None:
+            sense = self.sense
+
+        new_belief = self.pomdp.transition_model.transition_belief(belief * self.back_sensor[action, :, sense], action=action)
+        new_belief /= new_belief.sum()
+        return new_belief
+
+    @property
+    def space(self):
+        num_senses = self.back_sensor.shape[-1]
+        return Discrete(num_senses)
+
+
+### Reward models
+
+class RewardModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class TabularRewardModel(RewardModel):
+    def __init__(self, pomdp, reward_matrix):
+        super().__init__(pomdp)
+        self.reward_matrix = reward_matrix
+
+    @property
+    def R(self):
+        return self.reward_matrix
+
+    def __call__(self):
+        prev_state = self.pomdp.prev_state
+        action = self.pomdp.action
+        state = self.pomdp.state
+        return self.R[prev_state, action, state]
+
+class BeliefRewardModel(RewardModel):
+    def __init__(self, pomdp, reward_matrix):
+        super().__init__(pomdp)
+        self.reward_matrix = reward_matrix
+
+    @property
+    def R(self):
+        return self.reward_matrix
+
+    def __call__(self):
+        prev_belief = self.pomdp.observation_model.prev_belief
+        action = self.pomdp.action
+        belief = self.pomdp.observation_model.belief
+        return prev_belief @ self.R[:, action, :] @ belief
+
+
+### Termination models
+
+class TerminationModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+
+class NoTerminationModel(TerminationModel):
+    def __call__(self):
+        return False
+
+
+##### End models
+
+
+class POMDP(gym.Env):
+    def __init__(
+        self,
+        *,
+        state_space,
+        action_space,
+        observation_model_fn=BeliefObservationModel,
+        transition_model_fn=None,
+        sensor_model_fn=None,
+        reward_model_fn=None,
+        termination_model_fn=NoTerminationModel,
+        horizon=np.inf,
+        discount=1.0,
+    ):
+        self.state_space = state_space
+        self.action_space = action_space
+        self.horizon = horizon
+        self.discount = discount
+
+        self.transition_model = transition_model_fn(self)
+        self.observation_model = observation_model_fn(self)
+        self.sensor_model = sensor_model_fn(self)
+        self.reward_model = reward_model_fn(self)
+        self.termination_model = termination_model_fn(self)
+
+        self.viewer = None
+
+    def reset(self):
+        self.prev_state = None
+        self.state = self.state_space.sample_initial_state()
+        self.t = 0
+        return self.observation_model()
+
+    def step(self, action):
+        self.action = action
+
+        self.info = {}
+
+        # Update state
+        self.prev_state = self.state
+        self.state = self.transition_model()
+        self.t += 1
+
+        # Update sensor
+        sense = self.sensor_model()
+
+        # Update observation
+        ob = self.observation_model()
+
+        # Compute reward
+        reward = self.reward_model()
+
+        # Check termination
+        done = self.termination_model() or self.t >= self.horizon
+
+        return ob, reward, done, self.info
+
+    @property
+    def observation_space(self):
+        return self.observation_model.space
 
 
 class AssistanceGame:
@@ -160,17 +314,6 @@ class AssistanceGame:
         discount=1.0,
     ):
         """Two-agent MDP, with shared reward hidden from second agent.
-
-        Parameters
-        ----------
-        state_space : gym.spaces.Discrete, S
-        human_action_space : gym.spaces.Discrete, A_h
-        robot_action_space : gym.spaces.Discrete, A_r
-        transition : np.array[|S|, |A_h|, |A_r|, |S|]
-        reward_distribution : List[Tuple[np.array[|S|, |A_h|, |A_r|, |S|], Float]]
-        initial_state_distribution : np.array[|S|]
-        horizon : Float
-        discount : Float
         """
         self.state_space = state_space
         self.human_action_space = human_action_space
@@ -182,133 +325,209 @@ class AssistanceGame:
         self.discount = discount
 
 
+##### Model builders
+
+def tabular_transition_model_fn_builder(ag, human_policy_fn):
+    # This is being recomputed in multiple builders; if this is slow,
+    # we might want to factor it out, or cache it.
+    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
+
+    action_space = ag.robot_action_space
+    nA = action_space.n
+
+    num_rewards = len(rewards_and_policies)
+    num_states = ag.state_space.n * num_rewards
+    nS = num_states
+
+    nS0 = ag.state_space.n
+
+    T_shape = (nS, nA, nS)
+
+    is_sparse = isinstance(ag.transition, sparse.COO)
+
+    if not is_sparse:
+        T = np.zeros(T_shape)
+        for rew_idx, (_, human_policy) in enumerate(rewards_and_policies):
+            states_slice = slice(nS0 * rew_idx, nS0 * (rew_idx + 1))
+            T[states_slice, :, states_slice] = np.einsum('ij,ijkl->ikl', human_policy, ag.transition)
+    else:
+        T_coords = [[], [], []]
+        T_data = []
+
+        tr = force_sparse(ag.transition)
+        ground_states = range(nS0)
+
+        for rew_idx, (_, human_policy) in enumerate(rewards_and_policies):
+            lift_state = lambda state : nS0 * rew_idx + state
+            human_policy = force_sparse(human_policy)
+
+            # sparse.einsum is not implemented; one alternative is to iterate
+            # through ground states instead.
+            for s0 in ground_states:
+                Ts0 = sparse.tensordot(human_policy[s0], tr[s0], axes=(0, 0))
+
+                state = lift_state(s0)
+                actions = Ts0.coords[0]
+                next_states = map(lift_state, Ts0.coords[1])
+
+                T_coords[0].extend(state for _ in actions)
+                T_coords[1].extend(actions)
+                T_coords[2].extend(next_states)
+                T_data.extend(Ts0.data)
+
+        T = sparse.COO(T_coords, T_data, T_shape)
+
+    transition_model_fn = functools.partial(TabularTransitionModel, transition_matrix=T)
+    return transition_model_fn
+
+
+def discrete_reward_model_fn_builder(ag, human_policy_fn, use_belief_space=True):
+    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
+
+    action_space = ag.robot_action_space
+    nA = action_space.n
+
+    num_rewards = len(rewards_and_policies)
+    num_states = ag.state_space.n * num_rewards
+    nS = num_states
+
+    nS0 = ag.state_space.n
+
+    R_shape = (nS, nA, nS)
+
+    is_sparse = isinstance(ag.transition, sparse.COO)
+
+    if not is_sparse:
+        R = np.zeros(R_shape)
+        for rew_idx, (reward, human_policy) in enumerate(rewards_and_policies):
+            states_slice = slice(nS0 * rew_idx, nS0 * (rew_idx + 1))
+            R[states_slice, :, states_slice] = np.einsum('ij,ijkl->ikl', human_policy, reward)
+    else:
+        R_coords = [[], [], []]
+        R_data = []
+
+        tr = force_sparse(ag.transition)
+        ground_states = range(nS0)
+
+        for rew_idx, (reward, human_policy) in enumerate(rewards_and_policies):
+            lift_state = lambda state : nS0 * rew_idx + state
+            reward = force_sparse(reward)
+            human_policy = force_sparse(human_policy)
+
+            # sparse.einsum is not implemented; one alternative is to iterate
+            # through ground states instead.
+            for s0 in ground_states:
+                Rs0 = sparse.tensordot(human_policy[s0], reward[s0], axes=(0, 0))
+
+                state = lift_state(s0)
+                actions = Rs0.coords[0]
+                next_states = map(lift_state, Rs0.coords[1])
+
+                R_coords[0].extend(state for _ in actions)
+                R_coords[1].extend(actions)
+                R_coords[2].extend(next_states)
+                R_data.extend(Rs0.data)
+
+        R = sparse.COO(R_coords, R_data, R_shape)
+
+    reward_model_cls = BeliefRewardModel if use_belief_space else TabularRewardModel
+    reward_model_fn = functools.partial(reward_model_cls, reward_matrix=R)
+    return reward_model_fn
+
+
+def forward_sensor_model_fn_builder(ag, human_policy_fn):
+    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
+
+    nS0 = ag.state_space.n
+
+    action_space = ag.robot_action_space
+    nA = action_space.n
+
+    num_rewards = len(ag.reward_distribution)
+    num_states = ag.state_space.n * num_rewards
+    nS = num_states
+
+    O_shape = (nA, nS, nS0)
+
+    sensor = np.zeros(O_shape)
+
+    for rew_idx, (reward, human_policy) in enumerate(rewards_and_policies):
+        states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
+        ground_states = range(nS0)
+        sensor[:, states, ground_states] = 1.0
+
+    sensor_model_fn = functools.partial(TabularForwardSensorModel, sensor=sensor)
+    return sensor_model_fn
+
+
+def back_sensor_model_fn_builder(ag, human_policy_fn):
+    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
+
+    nAh = ag.human_action_space.n
+
+    nS0 = ag.state_space.n
+
+    action_space = ag.robot_action_space
+    nA = action_space.n
+
+    num_rewards = len(ag.reward_distribution)
+    num_states = ag.state_space.n * num_rewards
+    nS = num_states
+
+    BO_shape = (nA, nS, nAh)
+
+    back_sensor = np.zeros(BO_shape)
+    for rew_idx, (reward, human_policy) in enumerate(rewards_and_policies):
+        states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
+        back_sensor[:, states] = human_policy
+
+    sensor_model_fn = functools.partial(TabularBackwardSensorModel, back_sensor=back_sensor)
+    return sensor_model_fn
+
+def state_space_builder(ag):
+    num_rewards = len(ag.reward_distribution)
+    num_states = ag.state_space.n * num_rewards
+    nS = num_states
+
+    reward_probs = np.array([prob for _, prob in ag.reward_distribution])
+    initial_state_distribution = np.einsum('i,j->ij', reward_probs, ag.initial_state_distribution).flatten()
+
+    state_space = DiscreteDistribution(nS, initial_state_distribution)
+    return state_space
+
+##### End model builders
+
+
 class AssistanceProblem(POMDP):
-    def __init__(self,
-    assistance_game,
-    human_policy_fn,
-    is_sparse=True,
-    define_sensor=False,
-):
+    def __init__(
+        self,
+        assistance_game,
+        human_policy_fn,
+        transition_model_fn_builder=tabular_transition_model_fn_builder,
+        reward_model_fn_builder=discrete_reward_model_fn_builder,
+        sensor_model_fn_builder=back_sensor_model_fn_builder,
+        observation_model_fn=BeliefObservationModel,
+    ):
         """
         Parameters
         ----------
         assistance_game : AssistanceGame
-        human_policy_fn : AssistanceGame -> Reward (np.array[|S|, |A_h|, |A_r|, |S|])
-                                         -> Policy (np.array[|S|, |A_h|])
-        is_sparse : Bool
-            Whether the transition and reward matrices are to be sparse.
-        define_sensor: Bool
-            Whether to define the sensor model, which is only needed if back_sensor is not used.
-
-        For each possible reward, we compute a human policy, and thus
-        we compute the corresponding transition and reward matrices
-        for each (state, robot_action, next_state) tuple.
+        human_policy_fn : AssistanceGame -> Reward -> Policy
         """
         ag = assistance_game
-        nAh = ag.human_action_space.n
-
-        sensor_space = ag.state_space
-        nS0 = ag.state_space.n
-
-        action_space = ag.robot_action_space
-        nA = action_space.n
-
-        num_rewards = len(ag.reward_distribution)
-        num_states = ag.state_space.n * num_rewards
-        state_space = Discrete(num_states)
-        nS = state_space.n
-
-        O_shape = (nA, nS, nS0)
-        BO_shape = (nA, nS, nAh)
-        T_shape = (nS, nA, nS)
-        R_shape = (nS, nA, nS)
-
-        if define_sensor:
-            sensor = np.zeros(O_shape)
-        else:
-            sensor = None
-
-        back_sensor = np.zeros(BO_shape)
-        if not is_sparse:
-            transition = np.zeros(T_shape)
-            rewards = np.zeros(R_shape)
-
-            for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
-                human_policy = human_policy_fn(assistance_game, reward)
-
-                states_slice = slice(nS0 * rew_idx, nS0 * (rew_idx + 1))
-                states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
-                ground_states = range(nS0)
-
-                transition[states_slice, :, states_slice] = np.einsum('ij,ijkl->ikl', human_policy, ag.transition)
-                rewards[states_slice, :, states_slice] = np.einsum('ij,ijkl->ikl', human_policy, reward)
-
-                if define_sensor:
-                    sensor[:, states, ground_states] = 1.0
-                back_sensor[:, states] = human_policy
-        else:
-            # This should be doing the exact same thing as the other
-            # branch, but here T and R are sparse matrices.
-            T_coords = [[], [], []]
-            T_data = []
-            R_coords = [[], [], []]
-            R_data = []
-
-            tr = force_sparse(ag.transition)
-
-            for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
-                human_policy = human_policy_fn(assistance_game, reward)
-                ground_states = range(nS0)
-                states = range(nS0 * rew_idx, nS0 * (rew_idx + 1))
-                lift_state = lambda state : nS0 * rew_idx + state
-
-                reward = force_sparse(reward)
-                human_policy_sparse = force_sparse(human_policy)
-
-                # sparse.einsum is not implemented; thus we have to iterate
-                # through states with a for loop.
-                for s0 in ground_states:
-                    T0 = sparse.tensordot(human_policy_sparse[s0], tr[s0], axes=(0, 0))
-                    R0 = sparse.tensordot(human_policy_sparse[s0], reward[s0], axes=(0, 0))
-
-                    T_coords[0].extend(lift_state(s0) for _ in T0.coords[0])
-                    T_coords[1].extend(T0.coords[0])
-                    T_coords[2].extend(map(lift_state, T0.coords[1]))
-                    T_data.extend(T0.data)
-
-                    R_coords[0].extend(lift_state(s0) for _ in R0.coords[0])
-                    R_coords[1].extend(R0.coords[0])
-                    R_coords[2].extend(map(lift_state, R0.coords[1]))
-                    R_data.extend(R0.data)
-
-                if define_sensor:
-                    sensor[:, states, ground_states] = 1.0
-                back_sensor[:, states] = human_policy
-
-            transition = sparse.COO(T_coords, T_data, T_shape)
-            rewards = sparse.COO(R_coords, R_data, R_shape)
-
-
-        reward_probs = np.array([prob for _, prob in ag.reward_distribution])
-        initial_state_distribution = np.einsum('i,j->ij', reward_probs, ag.initial_state_distribution).flatten()
-
-        discount = ag.discount
-        horizon = ag.horizon
 
         super().__init__(
-            state_space=state_space,
-            sensor_space=sensor_space,
-            action_space=action_space,
-            transition=transition,
-            sensor=sensor,
-            back_sensor=back_sensor,
-            rewards=rewards,
-            horizon=horizon,
-            initial_state_distribution=initial_state_distribution,
-            discount=discount,
+            state_space=state_space_builder(ag),
+            action_space=ag.robot_action_space,
+            horizon=ag.horizon,
+            discount=ag.discount,
+
+            transition_model_fn=transition_model_fn_builder(ag, human_policy_fn),
+            reward_model_fn=reward_model_fn_builder(ag, human_policy_fn),
+            sensor_model_fn=sensor_model_fn_builder(ag, human_policy_fn),
+            observation_model_fn=observation_model_fn,
         )
-        self.num_obs = ag.state_space.n
-        self.num_rewards = num_rewards
+
 
 
 class POMDPPolicy:
@@ -395,4 +614,3 @@ def soft_value_iteration(T, R, discount=0.9, num_iter=30, beta=1e8):
     policy /= policy.sum(axis=1, keepdims=True)
 
     return policy
-

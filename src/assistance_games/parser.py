@@ -13,7 +13,16 @@ import numpy as np
 from lark import Lark, Transformer
 from gym.spaces import Discrete
 
-from assistance_games.core import POMDP
+from functools import partial
+
+
+from assistance_games.core import (
+    POMDP,
+    DiscreteDistribution,
+    TabularTransitionModel,
+    TabularForwardSensorModel,
+    BeliefRewardModel,
+)
 
 pomdp_parser = Lark(r"""
     pomdp_file: preamble param_list
@@ -193,16 +202,24 @@ class TreeToPOMDP(Transformer):
             next_state = get_raw_state(next_state)
             R[state, act, next_state] = val
 
+
+        state_space = DiscreteDistribution(num_states, initial_state_distribution)
+        action_space = Discrete(num_actions)
+
+        transition_model_fn = partial(TabularTransitionModel, transition_matrix=T)
+        sensor_model_fn = partial(TabularForwardSensorModel, sensor=O)
+        reward_model_fn = partial(BeliefRewardModel, reward_matrix=R)
+
+
         return POMDP(
-            state_space=Discrete(num_states),
-            sensor_space=Discrete(num_obs),
-            action_space=Discrete(num_actions),
-            transition=T,
-            sensor=O,
-            rewards=R,
+            state_space=state_space,
+            action_space=action_space,
             discount=discount,
             horizon=None,
-            initial_state_distribution=initial_state_distribution,
+
+            transition_model_fn=transition_model_fn,
+            reward_model_fn=reward_model_fn,
+            sensor_model_fn=sensor_model_fn,
         )
 
     def preamble(self, items):
