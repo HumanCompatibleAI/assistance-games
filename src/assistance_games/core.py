@@ -81,10 +81,10 @@ class POMDP(gym.Env):
         observed_reward = old_belief @ self.rewards[:, act, :] @ self.belief
         true_reward = self.rewards[old_state, act, self.state]
 
-        print(observed_reward, true_reward)
+        print(true_reward)
 
         self.t += 1
-        done = self.horizon is not None and self.t >= self.horizon
+        done = self.horizon is not None and self.t > self.horizon
 
         info = {'ob' : ob, 'true_reward' : true_reward}
 

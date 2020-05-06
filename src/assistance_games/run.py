@@ -18,7 +18,7 @@ def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, rende
             time.sleep(dt)
 
     for ep in range(n_episodes):
-        print('starting ep {}'.format(ep))
+        print('\n starting ep {}'.format(ep))
         ob = env.reset()
         render_fn()
 
