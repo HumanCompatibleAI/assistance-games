@@ -83,8 +83,8 @@ class POMDP(gym.Env):
 
         print(true_reward)
 
+        done = self.horizon is not None and self.t >= self.horizon
         self.t += 1
-        done = self.horizon is not None and self.t > self.horizon
 
         info = {'ob' : ob, 'true_reward' : true_reward}
 
