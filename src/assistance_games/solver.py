@@ -302,11 +302,22 @@ exact_vi = functools.partial(
 )
 
 
-def deep_rl_solve(pomdp, total_timesteps=20000, learning_rate=1e-3):
+def deep_rl_solve(pomdp, total_timesteps=50000, learning_rate=1e-3, use_lstm=True):
     from stable_baselines import PPO2
-    from stable_baselines.common.policies import MlpPolicy
+    from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
 
-    policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate)
+    if use_lstm:
+        policy = PPO2(MlpLstmPolicy, pomdp, learning_rate=learning_rate, nminibatches=1)
+    else:
+        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate)
     policy.learn(total_timesteps=total_timesteps)
     return policy
 
+def get_venv(env, n_envs=1):
+    """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary.
+    """
+    from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv
+    if n_envs == 1:
+        return DummyVecEnv([lambda : env])
+    else:
+        return SubprocVecEnv([(lambda : env) for _ in range(n_envs)])
