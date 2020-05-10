@@ -675,7 +675,7 @@ class CakePizzaGraphProblem(AssistanceProblem):
         super().__init__(assistance_game=assistance_game, human_policy_fn=human_policy_fn)
 
     def render(self):
-        print('s: ',self.state % 8)
+        print('s: ', self.state % 8)
 
 
 class CakePizzaTimeDependentAG(AssistanceGame):
@@ -693,7 +693,7 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         state_space = Discrete((n_world_states + n_world_states * n_queries) * horizon + 1)
 
         self.state_space = state_space
-        human_action_space = Discrete(1 + n_queries * 2)
+        human_action_space = Discrete(3)
         robot_action_space = Discrete(n_world_actions + n_queries)
 
         reward0 = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
@@ -708,22 +708,18 @@ class CakePizzaTimeDependentAG(AssistanceGame):
                 reward0[s_idx, :, a_r, :] = self.reward_fn(s, a_r, world_rewards=[0, 0., 2., -1., 0])
                 reward1[s_idx, :, a_r, :] = self.reward_fn(s, a_r, world_rewards=[0, 0., -1., 2., 0])
 
-        rewards_dist = [(reward0, 0.5), (reward1, 0.5)]
-
         initial_state_dist = np.zeros(state_space.n)
         initial_state_dist[0] = 1.0
-
-        discount = 0.9
 
         super().__init__(
             state_space=state_space,
             human_action_space=human_action_space,
             robot_action_space=robot_action_space,
             transition=transition,
-            reward_distribution=rewards_dist,
+            reward_distribution=[(reward0, 0.5), (reward1, 0.5)],
             initial_state_distribution=initial_state_dist,
             horizon=horizon,
-            discount=discount,
+            discount=0.9,
         )
 
     def state_idx_to_state(self, s_idx):
@@ -745,7 +741,9 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         # if the robot is currently waiting for human's response, transition back to the world state
         # (human action doesn't affect this at all)
         if s.query > 0:
-            return self.State(s_w=s.s_w, query=0, time=min(s.time + 1, self.horizon - 1))
+            return self.State(s_w=s.s_w,
+                              query=0,
+                              time=min(s.time + 1, self.horizon - 1))
         # if the robot is asking a question, transition to the corresponding query state
         if robot_action > self.num_world_actions-1:
             return self.State(s_w=s.s_w,
@@ -971,16 +969,16 @@ class CakePizzaGridAG(AssistanceGame):
     def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
         r = 0
         if s.meal_timer == 0 and ((s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza)):
-            r += 4
+            r += 10
         elif s.meal_timer == 0 and ((s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza)):
-            r += -1
+            r += -5
 
         if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-            r += 4
+            r += 10
         elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-            r += -1
+            r += -5
         if s.time == self.horizon and (s.drink == 0 or s.meal in [0, 1]):
-            r -= 5
+            r -= 10
         return r
 
     def get_state_features(self, s):
@@ -1008,9 +1006,9 @@ def human_response_cake_pizza_grid(time_before_feedback_available=10):
             # drink query
             elif s.query == 2:
                 if prefer_lemonade:
-                    policy[idx, 3] = 1.0
+                    policy[idx, 1] = 1.0
                 else:
-                    policy[idx, 4] = 1.0
+                    policy[idx, 2] = 1.0
         return policy
     return time_dep_policy_fn
 
@@ -1020,11 +1018,11 @@ class CakePizzaGridProblem(AssistanceProblem):
     def __init__(self):
         spec = self.Spec(height=2,
                          width=2,
-                         meal_pos=(0, 1),
+                         meal_pos=(1, 1),
                          meal_cooking_time=0,
-                         drink_pos=(1, 1),
+                         drink_pos=(0, 1),
                          horizon=9,
-                         discount=0.95,
+                         discount=0.99,
                          time_before_feedback_available=0)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
@@ -1032,7 +1030,15 @@ class CakePizzaGridProblem(AssistanceProblem):
 
     def render(self):
         s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)
-        print(s)
+        s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, t: {}'.format(s.pos_y,
+                                                                                   s.pos_x,
+                                                                                   s.meal,
+                                                                                   s.meal_timer,
+                                                                                   s.drink,
+                                                                                   s.time)
+        if s.query:
+            s_str = s_str + ' query={}'.format(s.query)
+        print(s_str)
 
 
 
