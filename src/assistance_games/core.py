@@ -330,7 +330,7 @@ class AssistanceGame:
 def tabular_transition_model_fn_builder(ag, human_policy_fn):
     # This is being recomputed in multiple builders; if this is slow,
     # we might want to factor it out, or cache it.
-    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
+    rewards_and_policies = get_rewards_and_policies(ag, human_policy_fn)
 
     action_space = ag.robot_action_space
     nA = action_space.n
@@ -382,8 +382,7 @@ def tabular_transition_model_fn_builder(ag, human_policy_fn):
 
 
 def discrete_reward_model_fn_builder(ag, human_policy_fn, use_belief_space=True):
-    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
-
+    rewards_and_policies = get_rewards_and_policies(ag, human_policy_fn)
     action_space = ag.robot_action_space
     nA = action_space.n
 
@@ -436,8 +435,7 @@ def discrete_reward_model_fn_builder(ag, human_policy_fn, use_belief_space=True)
 
 
 def forward_sensor_model_fn_builder(ag, human_policy_fn):
-    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
-
+    rewards_and_policies = get_rewards_and_policies(ag, human_policy_fn)
     nS0 = ag.state_space.n
 
     action_space = ag.robot_action_space
@@ -461,7 +459,7 @@ def forward_sensor_model_fn_builder(ag, human_policy_fn):
 
 
 def back_sensor_model_fn_builder(ag, human_policy_fn):
-    rewards_and_policies = [(reward, human_policy_fn(ag, reward)) for reward, _ in ag.reward_distribution]
+    rewards_and_policies = get_rewards_and_policies(ag, human_policy_fn)
 
     nAh = ag.human_action_space.n
 
@@ -542,6 +540,14 @@ class POMDPPolicy:
     def predict(self, belief, state=None, deterministic=True):
         idx = np.argmax(self.alpha_vectors @ belief)
         return self.alpha_actions[idx], state
+
+
+def get_rewards_and_policies(ag, human_policy_fn):
+    rewards_and_policies = []
+    for rew_idx, (reward, _) in enumerate(ag.reward_distribution):
+        kwargs = {'reward_idx': rew_idx}
+        rewards_and_policies.append((reward, human_policy_fn(ag, reward, **kwargs)))
+    return rewards_and_policies
 
 
 ### Human Policies

@@ -31,6 +31,7 @@ def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, rende
                 ac, state = policy.predict(ob, state)
             old_ob = ob
             ob, re, done, _ = env.step(ac)
+            print('reward: {}'.format(re))
             render_fn()
             step += 1
 
