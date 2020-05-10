@@ -63,15 +63,18 @@ def run(env_name, algo_name, **kwargs):
         # Necessary for using LSTMs
         env = get_venv(env)
 
-    policy = algo(env)
-    run_environment(env, policy, dt=0.5, n_episodes=100)
+    for seed in range(5):
+        print('\n seen {}'.format(seed))
+        np.random.seed(seed)
+        policy = algo(env)
+        run_environment(env, policy, dt=0.5, n_episodes=5)
 
 
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='redblue')
-    parser.add_argument('--algo_name', type=str, default='pbvi')
+    parser.add_argument('-e', '--env_name', type=str, default='redblue')
+    parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     args = parser.parse_args()
 
     run(args.env_name, args.algo_name)
