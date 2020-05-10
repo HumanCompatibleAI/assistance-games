@@ -14,7 +14,7 @@ You should see the environment below:
 
 ### core.py
 contain the core classes, such as:
-  * POMDP: Defines a POMDP and inherits gym.Env as a belief-space MDP
+  * POMDP: Defines a POMDP and inherits gym.Env
   * AssistanceGame
   * AssistanceProblem
   * POMDPPolicy: Policy returned by solvers
@@ -40,6 +40,26 @@ Simple script to run an environment.
 Some utils.
 ### tests.py
 Very basic smoke tests.
+
+## POMDP class:
+
+The current design uses a flexible, compositional architecture in which a POMDP has the following components:
+- A state space, which also contains the initial state distribution
+- An action space
+- A transition model, which generates next states
+- A sensor model, which generates "senses"\*
+- An observation model, which generates the observations to be returned from env.reset and env.step
+- A reward model, which generates rewards
+
+This supposedly makes for a very flexible implementation, in which the spaces can be continuous or infinite, transitions and rewards can be non-Markovian and time-dependent, and the environment specification can be different from the POMDP specification (e.g. different versions of observation models: observations can be (i) beliefs, (ii) human actions, (iii) human actions concatenated with state features).
+
+To get a particular behavior, it might be necessary to add implementations of new models, but that should be only a few lines of code.
+
+\* The motivation for having both 'senses' and 'observations' is that there is that there are "observations" in the POMDP definition, and "observations" returned from the gym.Env, and they can be different (e.g. in a belief-space MDP the gym.Env observations would be beliefs, instead of "POMDP observations"). To differentiate them, we use 'senses' for the POMDP definition, and 'observations' for the gym.Env implementation.
+
+## AssistanceProblem.\_\_init\_\_
+
+A similar decomposition is made on the construction of an AssistanceProblem: the constructor takes arbitrary functions that create the POMDP models from the assistance game and the human\_policy\_fn.
 
 ## Solvers:
 For understanding the solvers, I recommend:

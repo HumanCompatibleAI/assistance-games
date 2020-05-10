@@ -1,7 +1,6 @@
 """Minimal script to solve and render an environment.
 """
 
-import functools
 import numpy as np
 import time
 
@@ -41,27 +40,31 @@ def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, rende
 def run(env_name, algo_name, **kwargs):
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
-        'fourthree' : (lambda : envs.FourThreeMaze()),
-        'redblue' : (lambda : envs.RedBlueAssistanceProblem()),
-        'wardrobe' : (lambda : envs.WardrobeAssistanceProblem()),
-        'cakepizza': (lambda : envs.CakePizzaGraphProblem()),
-        'cakepizzatimedep': (lambda: envs.CakePizzaTimeDependentProblem()),
-        'cakepizzagrid': (lambda: envs.CakePizzaGridProblem())
+        'fourthree' : envs.FourThreeMaze,
+        'redblue' : envs.RedBlueAssistanceProblem,
+        'wardrobe' : envs.WardrobeAssistanceProblem,
+        'cakepizza': envs.CakePizzaGraphProblem,
+        'cakepizzatimedep': envs.CakePizzaTimeDependentProblem,
+        'cakepizzagrid': envs.CakePizzaGridProblem
+
     }
     algos = {
         'exact' : exact_vi,
-        'pbvi' : functools.partial(pbvi, max_iter=4),
+        'pbvi' : pbvi,
         'deeprl' : deep_rl_solve,
         'random' : lambda _ : None,
     }
 
-    env = env_fns[env_name]()
     algo = algos[algo_name]
 
     if algo_name == 'deeprl':
-        env.use_belief_space = False
+        # We want deeprl to learn the optimal policy without
+        # being helped on tracking beliefs
+        env = env_fns[env_name](use_belief_space=False)
         # Necessary for using LSTMs
         env = get_venv(env)
+    else:
+        env = env_fns[env_name](use_belief_space=True)
 
     for seed in range(5):
         print('\n seen {}'.format(seed))
