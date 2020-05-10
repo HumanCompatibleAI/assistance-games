@@ -839,9 +839,23 @@ def query_response_cake_pizza_time_dep(time_before_feedback_available=10):
 
 
 class CakePizzaTimeDependentProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=query_response_cake_pizza_time_dep(time_before_feedback_available=10)):
+    def __init__(self, use_belief_space=True):
+        human_policy_fn = query_response_cake_pizza_time_dep(time_before_feedback_available=10)
         self.assistance_game = CakePizzaTimeDependentAG(horizon=20)
-        super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
+        if use_belief_space:
+            observation_model_fn = BeliefObservationModel
+        else:
+            feature_extractor = lambda state : state % self.assistance_game.state_space.n
+            setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
+            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+
+        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
+        super().__init__(
+            assistance_game=self.assistance_game,
+            human_policy_fn=human_policy_fn,
+            observation_model_fn=observation_model_fn,
+            reward_model_fn_builder=reward_model_fn_builder,
+        )
 
     def render(self):
         s = self.assistance_game.state_idx_to_state(self.state % self.assistance_game.state_space.n)
@@ -1056,7 +1070,7 @@ def human_response_cake_pizza_grid(time_before_feedback_available=10):
 
 class CakePizzaGridProblem(AssistanceProblem):
     Spec = namedtuple('Spec', ['height', 'width', 'meal_pos', 'meal_cooking_time', 'drink_pos', 'horizon', 'discount', 'time_before_feedback_available'])
-    def __init__(self):
+    def __init__(self, use_belief_space=True):
         spec = self.Spec(height=2,
                          width=2,
                          meal_pos=(1, 1),
@@ -1067,7 +1081,24 @@ class CakePizzaGridProblem(AssistanceProblem):
                          time_before_feedback_available=0)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
-        super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
+
+
+        if use_belief_space:
+            observation_model_fn = BeliefObservationModel
+        else:
+            feature_extractor = lambda state : state % self.assistance_game.state_space.n
+            setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
+            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+
+        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
+        super().__init__(
+            assistance_game=self.assistance_game,
+            human_policy_fn=human_policy_fn,
+            observation_model_fn=observation_model_fn,
+            reward_model_fn_builder=reward_model_fn_builder,
+        )
+
+#        super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
 
     def render(self):
         s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)

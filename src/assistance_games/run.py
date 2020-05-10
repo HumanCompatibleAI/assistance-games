@@ -67,7 +67,7 @@ def run(env_name, algo_name, **kwargs):
         env = env_fns[env_name](use_belief_space=True)
 
     for seed in range(5):
-        print('\n seen {}'.format(seed))
+        print('\n seed {}'.format(seed))
         np.random.seed(seed)
         policy = algo(env)
         run_environment(env, policy, dt=0.5, n_episodes=5)
