@@ -13,7 +13,7 @@ from assistance_games.utils import get_asset
 def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, render=True):
     def render_fn():
         if render:
-            env.render()
+            env.render(mode='human')
             time.sleep(dt)
 
     for ep in range(n_episodes):
@@ -63,7 +63,8 @@ def run(env_name, algo_name, **kwargs):
         # being helped on tracking beliefs
         env = env_fns[env_name](use_belief_space=False)
         # Necessary for using LSTMs
-        env = get_venv(env)
+        env = get_venv(env, n_envs=1)
+        print('obs space {}', env.observation_space)
     else:
         env = env_fns[env_name](use_belief_space=True)
 

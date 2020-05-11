@@ -546,7 +546,6 @@ class WardrobeAssistanceProblem(AssistanceProblem):
             reward_model_fn_builder=reward_model_fn_builder,
         )
 
-
     def render(self, mode='human'):
         size = self.assistance_game.size
         wardrobe_size = self.assistance_game.wardrobe_size
@@ -615,7 +614,6 @@ class WardrobeAssistanceProblem(AssistanceProblem):
                 add_bar(pos, ratio)
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
-
 
 
 def query_response_cake_pizza(assistance_game, reward, **kwargs):
@@ -710,6 +708,7 @@ class CakePizzaGraphGame(AssistanceGame):
             discount=discount,
         )
 
+
 class CakePizzaGraphProblem(AssistanceProblem):
     def __init__(self, human_policy_fn=query_response_cake_pizza):
         assistance_game = CakePizzaGraphGame()
@@ -741,8 +740,8 @@ class CakePizzaTimeDependentAG(AssistanceGame):
         reward1 = np.zeros_like(reward0)
         transition = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
         for s_idx in range(state_space.n):
-            s = self.state_idx_to_state(s_idx)
-            assert s_idx == self.state_to_state_idx(s)
+            s = self.get_state(s_idx)
+            assert s_idx == self.get_idx(s)
             for a_r in range(robot_action_space.n):
                 # there is no loop over the human actions as they don't affect the resulting state
                 transition[s_idx, :, a_r, self.transition_state_id(s_idx, a_r)] = 1
@@ -763,14 +762,14 @@ class CakePizzaTimeDependentAG(AssistanceGame):
             discount=0.9,
         )
 
-    def state_idx_to_state(self, s_idx):
+    def get_state(self, s_idx):
         time = s_idx // (self.n_world_states * (self.n_queries + 1))
         s_idx = s_idx % (self.n_world_states * (self.n_queries + 1))
         s_w = s_idx % self.n_world_states
         query = s_idx // self.n_world_states
         return self.State(s_w=s_w, query=query, time=time)
 
-    def state_to_state_idx(self, s):
+    def get_idx(self, s):
         return s.s_w + self.n_world_states * s.query + (self.n_world_states * (self.n_queries + 1)) * s.time
 
     def reward_fn(self, s, a_r, world_rewards):
@@ -812,11 +811,19 @@ class CakePizzaTimeDependentAG(AssistanceGame):
 
     def transition_state_id(self, s_idx, robot_action):
         """Given the current state id and the robot action, outputs the id of the next state"""
-        s = self.state_idx_to_state(s_idx)
-        return self.state_to_state_idx(self.transition_state(s, robot_action))
+        s = self.get_state(s_idx)
+        return self.get_idx(self.transition_state(s, robot_action))
 
+    def get_state_features(self, s):
+        # s is the flat namedtuple state
+        features = np.zeros(self.n_world_states + 2, dtype='float32')
+        features[s.s_w] = 1
+        features[-1] = s.time
+        features[-2] = s.query
+        return features
+    
 
-def query_response_cake_pizza_time_dep(time_before_feedback_available=10):
+def query_response_cake_pizza_time_dep(time_before_feedback_available=0):
     def time_dep_policy_fn(assistance_game, reward, **kwargs):
         """Hardcoded query response for the time-dependent cake-pizza game. If in the querying state and able to give
         feedback, the human performs action 1 if she prefers cake and action 2 if she prefers pizza. Otherwise the human
@@ -825,7 +832,7 @@ def query_response_cake_pizza_time_dep(time_before_feedback_available=10):
         policy = np.zeros((ag.state_space.n, ag.human_action_space.n))
 
         for s_idx in range(ag.state_space.n):
-            s = ag.state_idx_to_state(s_idx)
+            s = ag.get_state(s_idx)
             if s.query > 0 and s.time >= time_before_feedback_available:
                 if reward[2, 0, 1, 0] > reward[3, 0, 1, 0]:
                     policy[s_idx, 1] = 1
@@ -840,13 +847,16 @@ def query_response_cake_pizza_time_dep(time_before_feedback_available=10):
 
 class CakePizzaTimeDependentProblem(AssistanceProblem):
     def __init__(self, use_belief_space=True):
-        human_policy_fn = query_response_cake_pizza_time_dep(time_before_feedback_available=10)
-        self.assistance_game = CakePizzaTimeDependentAG(horizon=20)
+        human_policy_fn = query_response_cake_pizza_time_dep(time_before_feedback_available=4)
+        self.assistance_game = CakePizzaTimeDependentAG(horizon=10)
+        ag = self.assistance_game
         if use_belief_space:
             observation_model_fn = BeliefObservationModel
         else:
-            feature_extractor = lambda state : state % self.assistance_game.state_space.n
-            setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
+            # feature_extractor = lambda state : state % self.assistance_game.state_space.n
+            feature_extractor = lambda s_idx: ag.get_state_features(ag.get_state(s_idx % ag.state_space.n))
+            init_s_idx = np.where(ag.initial_state_distribution)[0][0]
+            setattr(feature_extractor, 'n', len(ag.get_state_features(ag.get_state(init_s_idx))))
             observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
 
         reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
@@ -857,11 +867,12 @@ class CakePizzaTimeDependentProblem(AssistanceProblem):
             reward_model_fn_builder=reward_model_fn_builder,
         )
 
-    def render(self):
-        s = self.assistance_game.state_idx_to_state(self.state % self.assistance_game.state_space.n)
+    def render(self, mode='human'):
+        s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)
         wanted_meal = ['cake', 'pizza'][self.state // self.assistance_game.state_space.n]
         s_w_str = ['flour', 'dough', 'cake', 'pizza', 'absorbing']
-        print('s = {}, query = {}, t = {}, human wants {}'.format(s_w_str[s.s_w], s.query, s.time, wanted_meal))
+        s_query = ' query = {}'.format(s.query) if s.query else ''
+        print('s = {}, t = {}, human wants {}'.format(s_w_str[s.s_w],  s.time, wanted_meal) + s_query)
 
 
 class CakePizzaGridAG(AssistanceGame):
@@ -878,12 +889,12 @@ class CakePizzaGridAG(AssistanceGame):
         # robot actions are noop, 4 actions for moving, 2 for cooking, and two queries
         self.robot_action_space = Discrete(n_world_actions + self.n_queries)
         # human actions are no-op and the binary query response (separate queries don't get separate response actions)
-        self.human_action_space = Discrete(5)
+        self.human_action_space = Discrete(3)
 
         self.enumerate_states()
         init_state = self.State(pos_y=0, pos_x=0, meal=0, meal_timer=0, drink=0, query=0, time=0)
-        initial_state_dist = np.zeros(self.nS)
-        initial_state_dist[self.get_idx(init_state)] = 1.0
+        init_state_dist = np.zeros(self.nS)
+        init_state_dist[self.get_idx(init_state)] = 1.0
         transition, rewards_dist = self.make_transition_and_reward_matrices()
 
         super().__init__(
@@ -892,7 +903,7 @@ class CakePizzaGridAG(AssistanceGame):
             robot_action_space=self.robot_action_space,
             transition=transition,
             reward_distribution=rewards_dist,
-            initial_state_distribution=initial_state_dist,
+            initial_state_distribution=init_state_dist,
             horizon=self.horizon,
             discount=spec.discount,
         )
@@ -1076,18 +1087,21 @@ class CakePizzaGridProblem(AssistanceProblem):
                          meal_pos=(1, 1),
                          meal_cooking_time=0,
                          drink_pos=(0, 1),
-                         horizon=9,
-                         discount=0.99,
+                         horizon=20,
+                         discount=0.98,
                          time_before_feedback_available=0)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
-
+        ag = self.assistance_game
 
         if use_belief_space:
             observation_model_fn = BeliefObservationModel
         else:
-            feature_extractor = lambda state : state % self.assistance_game.state_space.n
-            setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
+            #feature_extractor = lambda state : state % self.assistance_game.state_space.n
+            feature_extractor = lambda s_idx : ag.get_state_features(ag.get_state(s_idx % ag.state_space.n))
+
+            init_s_idx = np.where(ag.initial_state_distribution)[0][0]
+            setattr(feature_extractor, 'n', len(ag.get_state_features(ag.get_state(init_s_idx))))
             observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
 
         reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)

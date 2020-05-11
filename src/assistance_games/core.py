@@ -11,8 +11,6 @@ from scipy.special import logsumexp
 
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_sparse
 
-
-
 class DiscreteDistribution(Discrete):
     def __init__(self, n, p=None):
         if p is None:
@@ -105,13 +103,20 @@ class FeatureSenseObservationModel(ObservationModel):
         if sense is None:
             sense = self.pomdp.sensor_model.space.sample()
 
-        return np.array([feature, sense])
+        obs = np.zeros((len(feature) + self.pomdp.sensor_model.space.n, 1))
+        obs[:len(feature), 0] = feature
+        obs[len(feature):, 0] = sense
+        # print(sense)
+        # print(obs)
+        return obs # np.array([feature, sense])
 
     @property
     def space(self):
         num_senses = self.pomdp.sensor_model.space.n
         num_features = self.feature_extractor.n
-        return MultiDiscrete([num_features, num_senses])
+        return Box(low=0.0, high=20.0, shape=(num_features + num_senses, 1))
+        # MultiDiscrete([num_features, num_senses])
+        #return Discrete(num_features + num_senses)
 
 
 ### Sensor models
