@@ -723,6 +723,7 @@ class CakePizzaTimeDependentAG(AssistanceGame):
 
     def __init__(self, horizon=20):
         self.horizon = horizon
+        self.max_feature_value = horizon
         n_world_states = 5
         self.n_world_states = n_world_states
         n_world_actions = 3
@@ -892,10 +893,28 @@ class CakePizzaGridAG(AssistanceGame):
         self.human_action_space = Discrete(3)
 
         self.enumerate_states()
+
         init_state = self.State(pos_y=0, pos_x=0, meal=0, meal_timer=0, drink=0, query=0, time=0)
         init_state_dist = np.zeros(self.nS)
         init_state_dist[self.get_idx(init_state)] = 1.0
         transition, rewards_dist = self.make_transition_and_reward_matrices()
+
+        # How many different values can each state feature take. This shouldn't be interpreted as a state!
+        self.discrete_feature_dims = self.State(pos_y=self.height,
+                                                pos_x=self.width,
+                                                meal=5,
+                                                meal_timer=spec.meal_cooking_time + 1,
+                                                drink=4,
+                                                query=self.n_queries + 1,
+                                                time=self.horizon)
+        self.max_feature_value = max(self.discrete_feature_dims)
+        self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'drink', 'query'}
+        num_regular_features = len(init_state) - len(self.one_hot_features)
+        len_one_hot_features = 0
+        for feature in self.one_hot_features:
+            assert hasattr(init_state, feature)
+            len_one_hot_features += getattr(self.discrete_feature_dims, feature)
+        self.feature_vector_length = num_regular_features + len_one_hot_features
 
         super().__init__(
             state_space=Discrete(self.nS),
@@ -1048,8 +1067,18 @@ class CakePizzaGridAG(AssistanceGame):
         return r
 
     def get_state_features(self, s):
-        # s is the flat namedtuple state
-        return np.asarray(s, dtype='float32')
+        # s is the flat namedtuple with attributes ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
+        f_vec = np.zeros(self.feature_vector_length, dtype='float32')
+        i = 0
+        for feature in s._fields:
+            if feature in self.one_hot_features:
+                f_vec[i + getattr(s, feature)] = 1
+                i += getattr(self.discrete_feature_dims, feature)
+            else:
+                f_vec[i] = getattr(s, feature)
+                i += 1
+        return f_vec
+ #       return np.asarray(s, dtype='float32')
 
 
 def human_response_cake_pizza_grid(time_before_feedback_available=10):
@@ -1085,11 +1114,11 @@ class CakePizzaGridProblem(AssistanceProblem):
         spec = self.Spec(height=2,
                          width=2,
                          meal_pos=(1, 1),
-                         meal_cooking_time=0,
+                         meal_cooking_time=3,
                          drink_pos=(0, 1),
                          horizon=20,
                          discount=0.98,
-                         time_before_feedback_available=0)
+                         time_before_feedback_available=5)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
         ag = self.assistance_game
@@ -1114,7 +1143,7 @@ class CakePizzaGridProblem(AssistanceProblem):
 
 #        super().__init__(assistance_game=self.assistance_game, human_policy_fn=human_policy_fn)
 
-    def render(self):
+    def render(self, mode='human'):
         s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)
         s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, t: {}'.format(s.pos_y,
                                                                                    s.pos_x,
