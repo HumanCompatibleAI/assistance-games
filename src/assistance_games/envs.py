@@ -906,15 +906,17 @@ class CakePizzaGridAG(AssistanceGame):
                                                 meal_timer=spec.meal_cooking_time + 1,
                                                 drink=4,
                                                 query=self.n_queries + 1,
-                                                time=self.horizon)
-        self.max_feature_value = max(self.discrete_feature_dims)
-        self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'drink', 'query'}
+                                                time=self.horizon + 1)
+
+        self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'drink', 'query', 'time'}
         num_regular_features = len(init_state) - len(self.one_hot_features)
         len_one_hot_features = 0
         for feature in self.one_hot_features:
             assert hasattr(init_state, feature)
             len_one_hot_features += getattr(self.discrete_feature_dims, feature)
         self.feature_vector_length = num_regular_features + len_one_hot_features
+        self.feature_matrix = self.make_feature_matrix()
+        self.max_feature_value = np.max(self.feature_matrix)
 
         super().__init__(
             state_space=Discrete(self.nS),
@@ -1054,19 +1056,25 @@ class CakePizzaGridAG(AssistanceGame):
     def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
         r = 0
         if s.meal_timer == 0 and ((s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza)):
-            r += 10
+            r += 2
         elif s.meal_timer == 0 and ((s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza)):
-            r += -5
+            r += -1
 
         if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-            r += 10
+            r += 2
         elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-            r += -5
-        if s.time == self.horizon and (s.drink == 0 or s.meal in [0, 1]):
-            r -= 10
+            r += -1
+        if s.time == self.horizon - 1 and (s.drink != 3 or s.meal != 4):
+            r -= 5
         return r
 
-    def get_state_features(self, s):
+    def make_feature_matrix(self):
+        feature_matrix = np.zeros((self.nS, self.feature_vector_length))
+        for s_idx in range(self.nS):
+            feature_matrix[s_idx, :] = self.feature_function(self.get_state(s_idx))
+        return feature_matrix
+
+    def feature_function(self, s):
         # s is the flat namedtuple with attributes ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
         f_vec = np.zeros(self.feature_vector_length, dtype='float32')
         i = 0
@@ -1078,7 +1086,9 @@ class CakePizzaGridAG(AssistanceGame):
                 f_vec[i] = getattr(s, feature)
                 i += 1
         return f_vec
- #       return np.asarray(s, dtype='float32')
+
+    def get_state_features(self, s_idx):
+        return self.feature_matrix[s_idx, :]
 
 
 def human_response_cake_pizza_grid(time_before_feedback_available=10):
@@ -1114,11 +1124,11 @@ class CakePizzaGridProblem(AssistanceProblem):
         spec = self.Spec(height=2,
                          width=2,
                          meal_pos=(1, 1),
-                         meal_cooking_time=3,
+                         meal_cooking_time=2,
                          drink_pos=(0, 1),
                          horizon=20,
                          discount=0.98,
-                         time_before_feedback_available=5)
+                         time_before_feedback_available=3)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
         ag = self.assistance_game
@@ -1127,10 +1137,10 @@ class CakePizzaGridProblem(AssistanceProblem):
             observation_model_fn = BeliefObservationModel
         else:
             #feature_extractor = lambda state : state % self.assistance_game.state_space.n
-            feature_extractor = lambda s_idx : ag.get_state_features(ag.get_state(s_idx % ag.state_space.n))
+            feature_extractor = lambda s_idx: ag.get_state_features(s_idx % ag.state_space.n)
 
             init_s_idx = np.where(ag.initial_state_distribution)[0][0]
-            setattr(feature_extractor, 'n', len(ag.get_state_features(ag.get_state(init_s_idx))))
+            setattr(feature_extractor, 'n', ag.feature_vector_length)
             observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
 
         reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)

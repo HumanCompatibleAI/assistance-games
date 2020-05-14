@@ -10,7 +10,7 @@ from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
 
-def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, render=True):
+def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
     def render_fn():
         if render:
             env.render(mode='human')
@@ -31,7 +31,7 @@ def run_environment(env, policy=None, n_episodes=5, dt=0.1, max_steps=100, rende
                 ac, state = policy.predict(ob, state)
             old_ob = ob
             ob, re, done, _ = env.step(ac)
-            print('reward: {}'.format(re))
+            print('r = {}'.format(int(re[0])))
             render_fn()
             step += 1
 

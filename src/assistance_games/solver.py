@@ -32,8 +32,8 @@ def pomdp_value_iteration(
     expand_beliefs_fn,
     value_backup_fn,
     max_iter=2,
-    num_beliefs=30,
-    max_value_iter=10,
+    num_beliefs=100,
+    max_value_iter=20,
     limit_belief_expansion=True,
 ):
     """Value Iteration POMDP solver.
@@ -303,12 +303,12 @@ exact_vi = functools.partial(
 )
 
 
-def deep_rl_solve(pomdp, total_timesteps=100000, learning_rate=1e-3, use_lstm=True):
+def deep_rl_solve(pomdp, total_timesteps=1000000, learning_rate=1e-3, use_lstm=True):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
 
     if use_lstm:
-        policy = PPO2(MlpLstmPolicy, pomdp, learning_rate=learning_rate, nminibatches=1, policy_kwargs=dict(n_lstm=32))
+        policy = PPO2(MlpLstmPolicy, pomdp, learning_rate=learning_rate, nminibatches=1, policy_kwargs=dict(n_lstm=32), ent_coef=0.015)
     else:
         policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate)
     policy.learn(total_timesteps=total_timesteps)

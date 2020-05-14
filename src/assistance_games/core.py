@@ -102,19 +102,16 @@ class FeatureSenseObservationModel(ObservationModel):
         sense = self.pomdp.sensor_model.sense
         if sense is None:
             sense = self.pomdp.sensor_model.space.sample()
-
         obs = np.zeros((len(feature) + self.pomdp.sensor_model.space.n, 1))
         obs[:len(feature), 0] = feature
-        obs[len(feature):, 0] = sense
-        # print(sense)
-        # print(obs)
+        obs[len(feature) + sense, 0] = 1
         return obs # np.array([feature, sense])
 
     @property
     def space(self):
         num_senses = self.pomdp.sensor_model.space.n
         num_features = self.feature_extractor.n
-        return Box(low=0.0, high=20.0, shape=(num_features + num_senses, 1))
+        return Box(low=0.0, high=self.pomdp.assistance_game.max_feature_value, shape=(num_features + num_senses, 1))
         # MultiDiscrete([num_features, num_senses])
         #return Discrete(num_features + num_senses)
 
