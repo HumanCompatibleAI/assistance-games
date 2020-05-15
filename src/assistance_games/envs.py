@@ -950,14 +950,17 @@ class CakePizzaGridAG(AssistanceGame):
             new_meal = 4
         if s.drink in [1, 2]:
             new_drink = 3
+        # tick down the baking timer if it's not 0
+        if s.meal_timer > 0 and s.meal in [2, 3]:
+            new_meal_timer = s.meal_timer - 1
 
         # movement
         if a_r in [1, 2, 3, 4]:
             move = [(1, 0), (-1, 0), (0, -1), (0, 1)][a_r - 1]
             new_pos = (s.pos_y + move[0], s.pos_x + move[1])
-            if (0 <= new_pos[0] <= self.height-1 and 0 <= new_pos[1] <= self.width-1
+            if (0 <= new_pos[0] <= self.height - 1 and 0 <= new_pos[1] <= self.width - 1
                     and new_pos not in [self.meal_pos, self.drink_pos]):
-                new_pos_x, new_pos_y = new_pos[1], new_pos[0]
+                new_pos_y, new_pos_x = new_pos[0], new_pos[1]
 
         # cooking
         elif a_r in [5, 6]:
@@ -973,10 +976,10 @@ class CakePizzaGridAG(AssistanceGame):
                         new_meal = 2
                     elif a_r == 6:
                         new_meal = 3
-                elif s.meal in [2, 3]:
-                    # tick down the baking timer if it's not 0
-                    if s.meal_timer > 0:
-                        new_meal_timer -= 1
+                # elif s.meal in [2, 3]:
+                #     # tick down the baking timer if it's not 0
+                #     if s.meal_timer > 0:
+                #         new_meal_timer -= 1
 
             # drink
             elif (s.pos_y, s.pos_x + 1) == self.drink_pos:
@@ -1056,17 +1059,17 @@ class CakePizzaGridAG(AssistanceGame):
     def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
         r = 0
         if s.meal_timer == 0 and ((s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza)):
-            r += 2
+            r += 1
         elif s.meal_timer == 0 and ((s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza)):
-            r += -1
+            r += -2
 
         if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-            r += 2
+            r += 1
         elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-            r += -1
+            r += -2
         if s.time == self.horizon - 1 and (s.drink != 3 or s.meal != 4):
             r -= 5
-        return r
+        return r if s.query == 0 or s.time == self.horizon - 1 else 0
 
     def make_feature_matrix(self):
         feature_matrix = np.zeros((self.nS, self.feature_vector_length))
@@ -1121,14 +1124,14 @@ def human_response_cake_pizza_grid(time_before_feedback_available=10):
 class CakePizzaGridProblem(AssistanceProblem):
     Spec = namedtuple('Spec', ['height', 'width', 'meal_pos', 'meal_cooking_time', 'drink_pos', 'horizon', 'discount', 'time_before_feedback_available'])
     def __init__(self, use_belief_space=True):
-        spec = self.Spec(height=2,
+        spec = self.Spec(height=3,
                          width=2,
-                         meal_pos=(1, 1),
-                         meal_cooking_time=2,
+                         meal_pos=(2, 1),
+                         meal_cooking_time=0,
                          drink_pos=(0, 1),
-                         horizon=20,
-                         discount=0.98,
-                         time_before_feedback_available=3)
+                         horizon=15,
+                         discount=0.99,
+                         time_before_feedback_available=0)
         human_policy_fn = human_response_cake_pizza_grid(spec.time_before_feedback_available)
         self.assistance_game = CakePizzaGridAG(spec)
         ag = self.assistance_game
@@ -1136,10 +1139,7 @@ class CakePizzaGridProblem(AssistanceProblem):
         if use_belief_space:
             observation_model_fn = BeliefObservationModel
         else:
-            #feature_extractor = lambda state : state % self.assistance_game.state_space.n
             feature_extractor = lambda s_idx: ag.get_state_features(s_idx % ag.state_space.n)
-
-            init_s_idx = np.where(ag.initial_state_distribution)[0][0]
             setattr(feature_extractor, 'n', ag.feature_vector_length)
             observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
 
