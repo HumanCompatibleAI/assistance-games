@@ -31,14 +31,14 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
                 ac, state = policy.predict(ob, state)
             old_ob = ob
             ob, re, done, _ = env.step(ac)
-            print('r = {}'.format(int(re[0])))
+            print('r = {}'.format(re))
             render_fn()
             step += 1
 
     return None
 
 
-def run(env_name, algo_name, **kwargs):
+def run(env_name, algo_name, seed, **kwargs):
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : envs.FourThreeMaze,
@@ -71,7 +71,7 @@ def run(env_name, algo_name, **kwargs):
     for seed in range(5):
         print('\n seed {}'.format(seed))
         np.random.seed(seed)
-        policy = algo(env)
+        policy = algo(env, seed=seed) if algo_name == 'deeprl' else algo(env)
         run_environment(env, policy, dt=0.5, n_episodes=5)
 
 
@@ -80,9 +80,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
+    parser.add_argument('-s', '--seed', type=int, default=0)
     args = parser.parse_args()
 
-    run(args.env_name, args.algo_name)
+    run(args.env_name, args.algo_name, args.seed)
 
 
 if __name__ == '__main__':
