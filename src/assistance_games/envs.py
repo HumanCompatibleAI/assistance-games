@@ -910,14 +910,14 @@ class CakePizzaGridAG(AssistanceGame):
                                                 query=self.n_queries + 1,
                                                 time=self.horizon + 1)
 
-        self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query', 'time'}
+        self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
         num_regular_features = len(init_state) - len(self.one_hot_features)
         len_one_hot_features = 0
         for feature in self.one_hot_features:
             assert hasattr(init_state, feature)
             len_one_hot_features += getattr(self.discrete_feature_dims, feature)
         self.feature_vector_length = num_regular_features + len_one_hot_features
-        self.feature_matrix = self.make_feature_matrix()
+        self.feature_matrix = self.make_feature_matrix(time_binary=True)
         self.max_feature_value = np.max(self.feature_matrix)
 
         super().__init__(
@@ -1065,25 +1065,25 @@ class CakePizzaGridAG(AssistanceGame):
     def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
         r = 0
         if s.meal_timer == 0 and ((s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza)):
-            r += 1
+            r += 2
         elif s.meal_timer == 0 and ((s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza)):
-            r += -2
+            r += -1
 
         if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-            r += 1
+            r += 2
         elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-            r += -2
+            r += -1
         if s.time == self.horizon - 1 and (s.drink != 3 or s.meal != 4):
-            r -= 5
+            r -= 0
         return r if s.query == 0 or s.time == self.horizon - 1 else 0
 
-    def make_feature_matrix(self):
+    def make_feature_matrix(self, time_binary=False):
         feature_matrix = np.zeros((self.nS, self.feature_vector_length))
         for s_idx in range(self.nS):
-            feature_matrix[s_idx, :] = self.feature_function(self.get_state(s_idx))
+            feature_matrix[s_idx, :] = self.feature_function(self.get_state(s_idx), time_binary)
         return feature_matrix
 
-    def feature_function(self, s):
+    def feature_function(self, s, time_binary=False):
         # s is the flat namedtuple with attributes ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
         f_vec = np.zeros(self.feature_vector_length, dtype='float32')
         i = 0
@@ -1092,7 +1092,10 @@ class CakePizzaGridAG(AssistanceGame):
                 f_vec[i + getattr(s, feature)] = 1
                 i += getattr(self.discrete_feature_dims, feature)
             else:
-                f_vec[i] = getattr(s, feature)
+                if feature == 'time' and time_binary:
+                    f_vec[i] = 1 if s.time == self.horizon - 1 else 0
+                else:
+                    f_vec[i] = getattr(s, feature)
                 i += 1
         return f_vec
 
@@ -1141,7 +1144,7 @@ class CakePizzaGridProblem(AssistanceProblem):
                          meal_pos=(2, 1),
                          meal_cooking_time=0,
                          drink_pos=(0, 1),
-                         horizon=15,
+                         horizon=20,
                          discount=0.99,
                          init_h_away_timer=2,
                          max_h_away_timer=2)
