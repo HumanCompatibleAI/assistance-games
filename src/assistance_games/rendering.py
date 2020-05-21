@@ -8,7 +8,12 @@ import numpy as np
 import pyglet.text
 from gym.envs.classic_control import rendering
 from gym.envs.classic_control.rendering import (
-        Geom, make_circle, Viewer, Transform, FilledPolygon, Image)
+        Geom, make_circle, Viewer, Transform, FilledPolygon)
+
+class Image(rendering.Image):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.set_color(1.0, 1.0, 1.0)
 
 class Grid(rendering.Geom):
     def __init__(self, *, start=(0, 0), end=None, grid_side=None, shape=(2, 2), invert_y=False):
