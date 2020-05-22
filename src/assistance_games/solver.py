@@ -11,7 +11,7 @@ and deep rl solvers.
 - Survey of point-based solvers, has clearest presentation:
     https://www.cs.mcgill.ca/~jpineau/files/jpineau-jaamas12-finalcopy.pdf
 """
-
+import pathlib
 from collections import namedtuple
 import functools
 import time
@@ -302,7 +302,7 @@ exact_vi = functools.partial(
 )
 
 
-def deep_rl_solve(pomdp, total_timesteps=3000000, learning_rate=1.1*1e-3, use_lstm=True, seed=0):
+def deep_rl_solve(pomdp, total_timesteps=1000000, learning_rate=1e-3, use_lstm=True, seed=0):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
 
@@ -314,7 +314,8 @@ def deep_rl_solve(pomdp, total_timesteps=3000000, learning_rate=1.1*1e-3, use_ls
                       policy_kwargs=dict(n_lstm=32),
                       ent_coef=0.011,
                       n_steps=256,
-                      seed=seed)
+                      seed=seed,
+                      tensorboard_log='./logs')
     else:
         policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
     policy.learn(total_timesteps=total_timesteps)

@@ -8,6 +8,7 @@ import assistance_games.envs as envs
 from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
+from stable_baselines.bench import Monitor
 
 
 def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
@@ -61,14 +62,17 @@ def run(env_name, algo_name, seed, **kwargs):
     if algo_name == 'deeprl':
         # We want deeprl to learn the optimal policy without
         # being helped on tracking beliefs
+
         env = env_fns[env_name](use_belief_space=False)
+        log_dir = './logs/'
+        env = Monitor(env, log_dir)
         # Necessary for using LSTMs
         env = get_venv(env, n_envs=1)
-        print('obs space {}', env.observation_space)
     else:
         env = env_fns[env_name](use_belief_space=True)
 
     for seed in range(5):
+
         print('\n seed {}'.format(seed))
         np.random.seed(seed)
         policy = algo(env, seed=seed) if algo_name == 'deeprl' else algo(env)
