@@ -29,7 +29,7 @@ import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, sample_distribution, dict_to_sparse
 
 class MealDrinkGridAG(AssistanceGame):
-    State = namedtuple('State', ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'])
+    State = namedtuple('State', ['pos_r_x', 'pos_r_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'])
     def __init__(self, spec):
         self.height = spec.height
         self.width = spec.width
@@ -47,21 +47,21 @@ class MealDrinkGridAG(AssistanceGame):
 
         self.enumerate_states()
 
-        init_state = self.State(pos_y=0, pos_x=0, meal=0, meal_timer=0, drink=0, h_away_timer=spec.init_h_away_timer, query=0)
+        init_state = self.State(pos_r_y=0, pos_r_x=0, meal=0, meal_timer=0, drink=0, h_away_timer=spec.init_h_away_timer, query=0)
         init_state_dist = np.zeros(self.nS)
         init_state_dist[self.get_idx(init_state)] = 1.0
         transition, rewards_dist = self.make_transition_and_reward_matrices()
 
         # How many different values can each state feature take. This shouldn't be interpreted as a state!
-        self.discrete_feature_dims = self.State(pos_y=self.height,
-                                                pos_x=self.width,
+        self.discrete_feature_dims = self.State(pos_r_y=self.height,
+                                                pos_r_x=self.width,
                                                 meal=5,
                                                 meal_timer=spec.meal_cooking_time + 1,
                                                 drink=4,
                                                 h_away_timer=self.max_h_away_timer + 1,
                                                 query=self.n_queries + 1)
 
-        self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
+        self.one_hot_features = {'pos_r_x', 'pos_r_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
         num_regular_features = len(init_state) - len(self.one_hot_features)
         len_one_hot_features = 0
         for feature in self.one_hot_features:
@@ -87,15 +87,15 @@ class MealDrinkGridAG(AssistanceGame):
         # if current timestep is the env's horizon, transition w/o increasing the state timestep
         # if currently asking a question, transition to the same state but w/o question
         if s.query > 0:
-            return self.State(pos_x=s.pos_x,
-                              pos_y=s.pos_y,
+            return self.State(pos_r_x=s.pos_r_x,
+                              pos_r_y=s.pos_r_y,
                               meal=s.meal,
                               meal_timer=s.meal_timer,
                               drink=s.drink,
                               h_away_timer=max(s.h_away_timer - 1, 0),
                               query=0)
 
-        new_pos_x, new_pos_y, new_meal, new_meal_timer, new_drink, new_query = s.pos_x, s.pos_y, s.meal, s.meal_timer, s.drink, s.query
+        new_pos_r_x, new_pos_r_y, new_meal, new_meal_timer, new_drink, new_query = s.pos_r_x, s.pos_r_y, s.meal, s.meal_timer, s.drink, s.query
 
         # If the meal or the drink is ready, it is automatically served / transitioned into an own absorbing state.
         # This way the agent spends only one timestep in a state with pizza / drink, and is rewarded once.
@@ -110,15 +110,15 @@ class MealDrinkGridAG(AssistanceGame):
         # movement
         if a_r in [1, 2, 3, 4]:
             move = [(1, 0), (-1, 0), (0, -1), (0, 1)][a_r - 1]
-            new_pos = (s.pos_y + move[0], s.pos_x + move[1])
+            new_pos = (s.pos_r_y + move[0], s.pos_r_x + move[1])
             if (0 <= new_pos[0] <= self.height - 1 and 0 <= new_pos[1] <= self.width - 1
                     and new_pos not in [self.meal_pos, self.drink_pos]):
-                new_pos_y, new_pos_x = new_pos[0], new_pos[1]
+                new_pos_r_y, new_pos_r_x = new_pos[0], new_pos[1]
 
         # cooking
         elif a_r in [5, 6]:
             # meal
-            if (s.pos_y, s.pos_x + 1) == self.meal_pos:
+            if (s.pos_r_y, s.pos_r_x + 1) == self.meal_pos:
                 # make dough
                 if s.meal == 0:
                     new_meal = 1
@@ -135,7 +135,7 @@ class MealDrinkGridAG(AssistanceGame):
                 #         new_meal_timer -= 1
 
             # drink
-            elif (s.pos_y, s.pos_x + 1) == self.drink_pos:
+            elif (s.pos_r_y, s.pos_r_x + 1) == self.drink_pos:
                 if s.drink == 0:
                     if a_r == 5:
                         new_drink = 1
@@ -146,8 +146,8 @@ class MealDrinkGridAG(AssistanceGame):
         elif a_r in [7, 8]:
             new_query = 1 if a_r == 7 else 2
 
-        return self.State(pos_x=new_pos_x,
-                          pos_y=new_pos_y,
+        return self.State(pos_r_x=new_pos_r_x,
+                          pos_r_y=new_pos_r_y,
                           meal=new_meal,
                           meal_timer=new_meal_timer,
                           drink=new_drink,
@@ -169,8 +169,8 @@ class MealDrinkGridAG(AssistanceGame):
                         for drink in range(4):
                             for h_away_timer in range(self.max_h_away_timer + 1):
                                 for query in range(self.n_queries + 1):
-                                    s = self.State(pos_x=x,
-                                                   pos_y=y,
+                                    s = self.State(pos_r_x=x,
+                                                   pos_r_y=y,
                                                    meal=meal,
                                                    meal_timer=meal_timer,
                                                    drink=drink,
@@ -229,7 +229,7 @@ class MealDrinkGridAG(AssistanceGame):
         return feature_matrix
 
     def feature_function(self, s):
-        # s is the flat namedtuple with attributes ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
+        # s is the flat namedtuple with attributes ['pos_r_x', 'pos_r_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
         f_vec = np.zeros(self.feature_vector_length, dtype='float32')
         i = 0
         for feature in s._fields:
@@ -281,15 +281,15 @@ class MealDrinkGridProblem(AssistanceProblem):
                                'init_h_away_timer',
                                'max_h_away_timer'])
     def __init__(self, use_belief_space=True):
-        spec = self.Spec(height=5,
-                         width=5,
-                         meal_pos=(4, 4),
-                         meal_cooking_time=4,
-                         drink_pos=(0, 4),
+        spec = self.Spec(height=2,
+                         width=2,
+                         meal_pos=(1, 1),
+                         meal_cooking_time=0,
+                         drink_pos=(0, 1),
                          horizon=30,
                          discount=0.99,
-                         init_h_away_timer=3,
-                         max_h_away_timer=3)
+                         init_h_away_timer=0,
+                         max_h_away_timer=0)
         human_policy_fn = human_response_meal_drink_grid
         self.assistance_game = MealDrinkGridAG(spec)
         ag = self.assistance_game
