@@ -877,7 +877,7 @@ class CakePizzaTimeDependentProblem(AssistanceProblem):
 
 
 class CakePizzaGridAG(AssistanceGame):
-    State = namedtuple('State', ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query', 'time'])
+    State = namedtuple('State', ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'])
     def __init__(self, spec):
         self.height = spec.height
         self.width = spec.width
@@ -895,7 +895,7 @@ class CakePizzaGridAG(AssistanceGame):
 
         self.enumerate_states()
 
-        init_state = self.State(pos_y=0, pos_x=0, meal=0, meal_timer=0, drink=0, h_away_timer=spec.init_h_away_timer, query=0, time=0)
+        init_state = self.State(pos_y=0, pos_x=0, meal=0, meal_timer=0, drink=0, h_away_timer=spec.init_h_away_timer, query=0)
         init_state_dist = np.zeros(self.nS)
         init_state_dist[self.get_idx(init_state)] = 1.0
         transition, rewards_dist = self.make_transition_and_reward_matrices()
@@ -907,8 +907,7 @@ class CakePizzaGridAG(AssistanceGame):
                                                 meal_timer=spec.meal_cooking_time + 1,
                                                 drink=4,
                                                 h_away_timer=self.max_h_away_timer + 1,
-                                                query=self.n_queries + 1,
-                                                time=self.horizon + 1)
+                                                query=self.n_queries + 1)
 
         self.one_hot_features = {'pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
         num_regular_features = len(init_state) - len(self.one_hot_features)
@@ -917,7 +916,7 @@ class CakePizzaGridAG(AssistanceGame):
             assert hasattr(init_state, feature)
             len_one_hot_features += getattr(self.discrete_feature_dims, feature)
         self.feature_vector_length = num_regular_features + len_one_hot_features
-        self.feature_matrix = self.make_feature_matrix(time_binary=True)
+        self.feature_matrix = self.make_feature_matrix()
         self.max_feature_value = np.max(self.feature_matrix)
 
         super().__init__(
@@ -941,9 +940,8 @@ class CakePizzaGridAG(AssistanceGame):
                               meal=s.meal,
                               meal_timer=s.meal_timer,
                               drink=s.drink,
-                              h_away_timer = max(s.h_away_timer - 1, 0),
-                              query=0,
-                              time=min(s.time + 1, self.horizon))
+                              h_away_timer=max(s.h_away_timer - 1, 0),
+                              query=0)
 
         new_pos_x, new_pos_y, new_meal, new_meal_timer, new_drink, new_query = s.pos_x, s.pos_y, s.meal, s.meal_timer, s.drink, s.query
 
@@ -1002,8 +1000,7 @@ class CakePizzaGridAG(AssistanceGame):
                           meal_timer=new_meal_timer,
                           drink=new_drink,
                           h_away_timer=max(s.h_away_timer - 1, 0),
-                          query=new_query,
-                          time=min(s.time + 1, self.horizon))
+                          query=new_query)
 
     def enumerate_states(self):
         state_num = {}
@@ -1019,17 +1016,15 @@ class CakePizzaGridAG(AssistanceGame):
                             continue
                         for drink in range(4):
                             for h_away_timer in range(self.max_h_away_timer + 1):
-                                for time in range(self.horizon+1):
-                                    for query in range(self.n_queries + 1):
-                                        s = self.State(pos_x=x,
-                                                       pos_y=y,
-                                                       meal=meal,
-                                                       meal_timer=meal_timer,
-                                                       drink=drink,
-                                                       h_away_timer=h_away_timer,
-                                                       query=query,
-                                                       time=time)
-                                        state_num[s] = len(state_num)
+                                for query in range(self.n_queries + 1):
+                                    s = self.State(pos_x=x,
+                                                   pos_y=y,
+                                                   meal=meal,
+                                                   meal_timer=meal_timer,
+                                                   drink=drink,
+                                                   h_away_timer=h_away_timer,
+                                                   query=query)
+                                    state_num[s] = len(state_num)
         self.state_num = state_num
         self.num_state = {v: k for k, v in self.state_num.items()}
         self.nS = len(state_num)
@@ -1073,17 +1068,15 @@ class CakePizzaGridAG(AssistanceGame):
             r += 2
         elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
             r += -1
-        if s.time == self.horizon - 1 and (s.drink != 3 or s.meal != 4):
-            r -= 0
-        return r if s.query == 0 or s.time == self.horizon - 1 else 0
+        return r if s.query == 0 else 0
 
-    def make_feature_matrix(self, time_binary=False):
+    def make_feature_matrix(self):
         feature_matrix = np.zeros((self.nS, self.feature_vector_length))
         for s_idx in range(self.nS):
-            feature_matrix[s_idx, :] = self.feature_function(self.get_state(s_idx), time_binary)
+            feature_matrix[s_idx, :] = self.feature_function(self.get_state(s_idx))
         return feature_matrix
 
-    def feature_function(self, s, time_binary=False):
+    def feature_function(self, s):
         # s is the flat namedtuple with attributes ['pos_x', 'pos_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
         f_vec = np.zeros(self.feature_vector_length, dtype='float32')
         i = 0
@@ -1092,10 +1085,7 @@ class CakePizzaGridAG(AssistanceGame):
                 f_vec[i + getattr(s, feature)] = 1
                 i += getattr(self.discrete_feature_dims, feature)
             else:
-                if feature == 'time' and time_binary:
-                    f_vec[i] = 1 if s.time == self.horizon - 1 else 0
-                else:
-                    f_vec[i] = getattr(s, feature)
+                f_vec[i] = getattr(s, feature)
                 i += 1
         return f_vec
 
@@ -1139,15 +1129,15 @@ class CakePizzaGridProblem(AssistanceProblem):
                                'init_h_away_timer',
                                'max_h_away_timer'])
     def __init__(self, use_belief_space=True):
-        spec = self.Spec(height=3,
-                         width=2,
-                         meal_pos=(2, 1),
-                         meal_cooking_time=0,
-                         drink_pos=(0, 1),
-                         horizon=20,
+        spec = self.Spec(height=5,
+                         width=5,
+                         meal_pos=(4, 4),
+                         meal_cooking_time=4,
+                         drink_pos=(0, 4),
+                         horizon=30,
                          discount=0.99,
-                         init_h_away_timer=2,
-                         max_h_away_timer=2)
+                         init_h_away_timer=3,
+                         max_h_away_timer=3)
         human_policy_fn = human_response_cake_pizza_grid
         self.assistance_game = CakePizzaGridAG(spec)
         ag = self.assistance_game
@@ -1171,13 +1161,12 @@ class CakePizzaGridProblem(AssistanceProblem):
 
     def render(self, mode='human'):
         s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)
-        s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, h_away_timer: {}, t: {}'.format(s.pos_y,
+        s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, h_away_timer: {}'.format(s.pos_y,
                                                                                    s.pos_x,
                                                                                    s.meal,
                                                                                    s.meal_timer,
                                                                                    s.drink,
-                                                                                   s.h_away_timer,
-                                                                                   s.time)
+                                                                                   s.h_away_timer)
         if s.query:
             s_str = s_str + ' query={}'.format(s.query)
         print(s_str)
