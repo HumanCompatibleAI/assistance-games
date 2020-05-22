@@ -310,9 +310,14 @@ class MealDrinkGridProblem(AssistanceProblem):
         )
 
     def render(self, mode='human'):
-        s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)
-        s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, h_away_timer: {}'.format(s.pos_y,
-                                                                                   s.pos_x,
+        h = self.assistance_game.height
+        w = self.assistance_game.width
+        nS0 = self.assistance_game.state_space.n
+        idx = self.state % nS0
+        rew_idx = self.state // nS0
+        s = self.assistance_game.get_state(idx)
+        s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, h_away_timer: {}'.format(s.pos_r_y,
+                                                                                   s.pos_r_x,
                                                                                    s.meal,
                                                                                    s.meal_timer,
                                                                                    s.drink,
@@ -320,6 +325,94 @@ class MealDrinkGridProblem(AssistanceProblem):
         if s.query:
             s_str = s_str + ' query={}'.format(s.query)
         print(s_str)
+
+        if self.viewer is None:
+            self.viewer = rendering.Viewer(500,600)
+            self.viewer.set_bounds(-120, 120, -150, 120)
+
+            self.grid = rendering.Grid(start=(-100, -100), end=(100, 100), shape=(h, w))
+            self.viewer.add_geom(self.grid)
+
+        human_image = get_asset('images/girl1.png')
+        human = rendering.Image(human_image, self.grid.side, self.grid.side)
+        self.human_transform = rendering.Transform()
+        human.add_attr(self.human_transform)
+
+        robot_image = get_asset('images/robot1.png')
+        robot = rendering.Image(robot_image, self.grid.side, self.grid.side)
+        self.robot_transform = rendering.Transform()
+        robot.add_attr(self.robot_transform)
+
+        water_image = get_asset('images/water1.png')
+        water = rendering.Image(water_image, self.grid.side, self.grid.side)
+        self.water_transform = rendering.Transform()
+        water.add_attr(self.water_transform)
+
+        tea_image = get_asset('images/tea1.png')
+        tea = rendering.Image(tea_image, self.grid.side, self.grid.side)
+        self.tea_transform = rendering.Transform()
+        tea.add_attr(self.tea_transform)
+
+        soda_image = get_asset('images/soda1.png')
+        soda = rendering.Image(soda_image, self.grid.side, self.grid.side)
+        self.soda_transform = rendering.Transform()
+        soda.add_attr(self.soda_transform)
+
+        flour_image = get_asset('images/flour1.png')
+        flour = rendering.Image(flour_image, self.grid.side, self.grid.side)
+        self.flour_transform = rendering.Transform()
+        flour.add_attr(self.flour_transform)
+
+        dough_image = get_asset('images/dough1.png')
+        dough = rendering.Image(dough_image, self.grid.side, self.grid.side)
+        self.dough_transform = rendering.Transform()
+        dough.add_attr(self.dough_transform)
+
+        pizza_image = get_asset('images/pizza1.png')
+        pizza = rendering.Image(pizza_image, self.grid.side, self.grid.side)
+        self.pizza_transform = rendering.Transform()
+        pizza.add_attr(self.pizza_transform)
+
+        cake_image = get_asset('images/cake1.png')
+        cake = rendering.Image(cake_image, self.grid.side, self.grid.side)
+        self.cake_transform = rendering.Transform()
+        cake.add_attr(self.cake_transform)
+
+        robot_coords = self.grid.coords_from_pos((s.pos_r_y, s.pos_r_x))
+        meal_coords = self.grid.coords_from_pos(self.assistance_game.meal_pos)
+        drink_coords = self.grid.coords_from_pos(self.assistance_game.drink_pos)
+        self.viewer.add_onetime(robot)
+        self.robot_transform.set_translation(*robot_coords)
+
+        # clear all geoms except for the grid
+        if s.meal == 0 and s.drink == 0:
+            self.viewer.geoms = [self.grid]
+
+        if s.meal == 0:
+            self.viewer.add_onetime(flour)
+            self.flour_transform.set_translation(*meal_coords)
+        elif s.meal == 1:
+            self.viewer.add_onetime(dough)
+            self.dough_transform.set_translation(*meal_coords)
+        elif s.meal == 2:
+            self.viewer.add_geom(cake)
+            self.cake_transform.set_translation(*meal_coords)
+        elif s.meal == 3:
+            self.viewer.add_geom(pizza)
+            self.pizza_transform.set_translation(*meal_coords)
+
+        if s.drink == 0:
+            self.viewer.add_onetime(water)
+            self.water_transform.set_translation(*drink_coords)
+        elif s.drink == 1:
+            self.soda_transform.set_translation(*drink_coords)
+            self.viewer.add_geom(soda)
+        elif s.drink == 2:
+            self.tea_transform.set_translation(*drink_coords)
+            self.viewer.add_geom(tea)
+
+        return self.viewer.render(return_rgb_array=mode == 'rgb_array')
+
 
 
 
