@@ -21,6 +21,8 @@ from scipy.optimize import linprog
 from scipy.special import softmax
 from scipy.spatial import distance_matrix
 
+import cvxpy as cp
+
 from assistance_games.core import POMDPPolicy, TabularBackwardSensorModel
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
 
@@ -64,7 +66,7 @@ def get_effective_horizon(pomdp, epsilon=1e-3):
         return pomdp.horizon
     else:
         disc = pomdp.discount
-        R = pomdp.rewards
+        R = pomdp.reward_model.R
         R_range = R.max() - R.min()
         num_iters = int(np.ceil(np.log(epsilon / R_range) // np.log(disc)))
         return num_iters
@@ -171,40 +173,113 @@ def prune_alphas(alpha_pairs):
     a witness belief b (by solving a linear program)
     such that a_j @ b > a_i @ b, for all i, i != j.
     """
-    def find_domination_witness(alphas, target):
-        """Finds witness for target vector.
-        """
-        nAL = len(alphas)
-        nS = len(target.vector)
 
+    def find_domination_witness(alphas, target, unpacked_constraints=False):
+        """Finds witness for target vector.
+
+        That is, finds a belief for which the target alpha
+        is works better than all the other ones, proving that
+        the target alpha is not dominated.
+        """
         if not alphas:
-            belief = np.zeros(nS)
+            # With no alphas, any belief is a witness
+            belief = np.zeros_like(target.vector)
             belief[0] = 1.0
             return belief
 
-        A_ub = np.zeros((nAL + nS + 1, nS + 1))
-        for A_row, (alp, _) in zip(A_ub[:nAL], alphas):
-            A_row[:-1] = alp - target.vector
-            A_row[-1] = 1
+        nAL = len(alphas)
+        nS = len(target.vector)
+        EPS = 1e-3
 
-        A_ub[nAL:] = (-1) * np.eye(nS+1)
-
-        A_eq = np.ones((1, nS + 1))
-        A_eq[0, -1] = 0
+        belief = cp.Variable(nS)
+        slack = cp.Variable(1)
         
-        b_eq = np.ones(1)
+        obj = cp.Maximize(slack)
 
-        b = np.zeros(A_ub.shape[0])
-        b[-1] = (-1) * 1e-4
-        c = np.zeros(nS + 1)
-        c[-1] = -1.0
-
-        result = linprog(c, A_ub=A_ub, b_ub=b, A_eq=A_eq, b_eq=b_eq)
-        if result.success:
-            belief = result.x[:-1]
-            return belief
+        # These two branches are meant to be the same; however, the upper
+        # branch is much easier to understand, while the lower one is more
+        # efficient (often 10-100 times faster). So, I'm keeping the
+        # upper one for readability and testing purposes.
+        if unpacked_constraints:
+            target_is_not_dominated = [(target.vector - a.vector) @ belief >= slack for a in alphas]
+            belief_is_prob = [np.ones(num_states) @ belief == 1, 0 <= belief, belief <= 1]
+            slack_is_positive = [slack >= EPS]
+            constraints = target_is_not_dominated + belief_is_prob + slack_is_positive
         else:
-            return None
+            A_not_dominated = np.zeros((nAL, nS+1))
+            for A_row, alpha in zip(A_not_dominated, alphas):
+                A_row[:-1] = target.vector - alpha.vector
+                A_row[-1] = -1 # slack coefficient
+            b_not_dominated = np.zeros((nAL))
+
+            A_belief_bounded_by_one = np.zeros((nS, nS+1))
+            A_belief_bounded_by_one[:, :nS] = np.eye(nS)
+            b_belief_bounded_by_one = np.ones((nS))
+
+            A_belief_bounded_by_zero = np.zeros((nS, nS+1))
+            A_belief_bounded_by_zero[:, :nS] = np.eye(nS)
+            b_belief_bounded_by_zero = np.zeros((nS))
+
+            A_belief_sums_to_one = np.zeros((1, nS+1))
+            A_belief_sums_to_one[0, :nS] = np.ones((nS))
+            b_belief_sums_to_one = np.ones((1,))
+
+            A_slack_positive = np.zeros((1, nS+1))
+            A_slack_positive[0, -1] = 1.0
+            b_slack_positive = EPS * np.ones((1,))
+
+            A_ub = np.concatenate([
+                (-1) * A_not_dominated,
+                (-1) * A_belief_bounded_by_zero,
+                A_belief_bounded_by_one,
+                (-1) * A_slack_positive,
+            ])
+
+            b_ub = np.concatenate([
+                (-1) * b_not_dominated,
+                (-1) * b_belief_bounded_by_zero,
+                b_belief_bounded_by_one,
+                (-1) * b_slack_positive,
+            ])
+
+            A_eq = A_belief_sums_to_one
+            b_eq = b_belief_sums_to_one
+
+            c = np.zeros(nS + 1)
+            c[-1] = -1.0
+
+            constraints = [A_ub[:, :-1] @ belief + A_ub[:, -1:] @ slack <= b_ub,
+                           A_eq[:, :-1] @ belief + A_eq[:, -1:] @ slack == b_eq]
+
+        prob = cp.Problem(obj, constraints)
+
+        # It seems that it is common for LP solvers to not guarantee a solution,
+        # and just throw an exception if they don't find a solution, we try to
+        # use other solvers, which most often works.
+        try:
+            prob.solve(solver=cp.ECOS, verbose=False)
+            return belief.value
+        except cp.error.SolverError as err:
+            pass
+
+        try:
+            prob.solve(solver=cp.SCS, verbose=False)
+            return belief.value
+        except cp.error.SolverError:
+            pass
+
+        try:
+            result = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq)
+            return result.x[:-1] if result.success else None
+        except Exception as err:
+            pass
+
+        raise Exception(
+            'All LP solvers failed. You may want to try slightly alter values in your problem, or ' +
+            'try different solver hyperparameters (or different solvers) by directly modifying ' +
+            'the code.'
+        )
+
 
     successes = []
     queue = alpha_pairs
@@ -213,11 +288,7 @@ def prune_alphas(alpha_pairs):
         alpha_set = successes + queue
         belief = find_domination_witness(alpha_set[:-1], alpha_set[-1])
         if belief is not None:
-            # We save the best alpha for the witness belief found.
-            idx = max(range(len(queue)), key=lambda i : belief @ queue[i].vector)
-            successes.append(queue[idx])
-            if idx != len(queue) - 1:
-                queue.pop(idx)
+            successes.append(queue[-1])
         queue.pop(-1)
 
     return successes

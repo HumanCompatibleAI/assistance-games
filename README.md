@@ -89,5 +89,5 @@ Sparse matrices now implemented!
 ## Known issues:
 
 Current issues that require further investigation:
-  * The exact solver will sometimes raise an exception, because the linear program solver raises a weird error that seems to be an internal issue with the solver (it seems to find a solution, then to conclude that the solution doesn't work). If this happens (most of the time it doesn't), the simplest way to 'circumvent it' is to make slight modifications in the game so that we get different linear programs.
+  * ~~The exact solver will sometimes raise an exception, because the linear program solver raises a weird error that seems to be an internal issue with the solver (it seems to find a solution, then to conclude that the solution doesn't work). If this happens (most of the time it doesn't), the simplest way to 'circumvent it' is to make slight modifications in the game so that we get different linear programs.~~
   * ~~For some image files, the renderer fails to display them (displaying instead a black square), no obvious reason why. Could be related to some openGL flags, but they do seem to be set up correctly.~~
