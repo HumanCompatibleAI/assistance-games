@@ -77,17 +77,3 @@ For computing a human policy, the human has to use the transition matrix from th
 Normally, in POMDPs, we have a sensor model that gives probabilities O(o |s', a) of observations, given the action taken and the resulting **next state**. However, we are dealing with a very particular type of POMDP, in which our original state space is fully observable and deterministic, with the only uncertainty being the reward; and since all the information about the reward is contained in the human's actions, we can instead treat the human's actions as observations (this can be done as long as the state is fully determined by the actions (i.e. fixed initial positions and deterministic transitions)).
 
 To do that however, we need a sensor model that relates the **previous state** with the observation, instead of the next state; so we include an optional 'back\_sensor', which gives probabilities O'(o' | s, a). This change greatly reduces the complexity of solvers (e.g. in RedBlueAssistanceProblem, it reduces an exponent in the complexity from 24 to 2, changing it from intractable to solvable 1-3 seconds).
-
-
-## Current limitations:
-
-~~The main limitation is that all the code assumes that transitions, rewards and sensors are in the form of full matrices. This highly limits how much the code can scale, since a full transition matrix needs |S|\*\*2|A\_H||A\_R| entries, which for a 4x4 grid with 2 agents and nothing else, this is 1048576 entries (though only 4096 non-zero entries). So, it is necessary to adapt the code to functions (instead of matrices), and maybe also sparse matrices.~~
-
-Sparse matrices now implemented!
-
-
-## Known issues:
-
-Current issues that require further investigation:
-  * ~~The exact solver will sometimes raise an exception, because the linear program solver raises a weird error that seems to be an internal issue with the solver (it seems to find a solution, then to conclude that the solution doesn't work). If this happens (most of the time it doesn't), the simplest way to 'circumvent it' is to make slight modifications in the game so that we get different linear programs.~~
-  * ~~For some image files, the renderer fails to display them (displaying instead a black square), no obvious reason why. Could be related to some openGL flags, but they do seem to be set up correctly.~~
