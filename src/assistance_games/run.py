@@ -88,6 +88,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
+    # the seed arg is unused, for now we just loop through fixed n seeds
     parser.add_argument('-s', '--seed', type=int, default=0)
     args = parser.parse_args()
 

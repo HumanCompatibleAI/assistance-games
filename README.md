@@ -79,4 +79,6 @@ Normally, in POMDPs, we have a sensor model that gives probabilities O(o |s', a)
 To do that however, we need a sensor model that relates the **previous state** with the observation, instead of the next state; so we include an optional 'back\_sensor', which gives probabilities O'(o' | s, a). This change greatly reduces the complexity of solvers (e.g. in RedBlueAssistanceProblem, it reduces an exponent in the complexity from 24 to 2, changing it from intractable to solvable 1-3 seconds).
 
 ## Deep RL:
+Deep RL works for ```mealgraph, mealdrink, mealdrinkhmoves``` envs; doesn't yet work with Pedro's initial toy envs.
+
 To monitor progress of your deep RL training, use the ```deeprl-plotting.ipynb``` notebook. Currently multiple seeds are executed sequentially; this will likely be changed in the future.
