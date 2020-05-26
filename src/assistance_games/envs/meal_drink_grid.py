@@ -29,6 +29,29 @@ import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, sample_distribution, dict_to_sparse
 
 class MealDrinkGridAG(AssistanceGame):
+    '''
+    An env where the robot can move and make a meal and a drink. For the meal, the robot first makes dough from flour
+    and then has to choose between pizza and pie. For the drink, the robot also chooses between two options. All cooking
+    actions are irreversible. Making pie / pizza from dough requires meal_cooking_time timesteps.
+
+    In addition, the robot can query the human about her meal and drink preferences.
+
+    The human only acts in query states, and provides binary meal/drink comparison responses. The concrete response
+    policy is specified in the human policy function. Additionally, human starts out away from the env for the first
+    max_h_away_timer timesteps. The human policy we use does not answer queries while away.
+
+    Overall this env demonstrates
+    --  option value preservation: if Alice is initally away, the robot would wait for her to appear and query her
+        for the correct meal / drink choices (instead of guessing meal / drink and risking making something Alice doesn't
+        want)
+    --  information-conditional plans: depending on how long Alice is away and how long is the env horizon, the robot
+        would either
+            - wait for Alice, ask her about both ouptions, and make both correctly
+            - guess the meal (since it takes a long time to cook) and ask about the drink once Alice is back
+            - guess both the meal and the drink if there's not enough time to query and make the foods
+    --  relevance-aware active learning: when free to query whenever (Alice is present from step 0) the robot would
+        query about one item, prepare it, and only then query about the other item.
+    '''
     State = namedtuple('State', ['pos_r_x', 'pos_r_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'])
     def __init__(self, spec):
         self.height = spec.height
@@ -211,16 +234,24 @@ class MealDrinkGridAG(AssistanceGame):
 
     def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
         r = 0
-        if s.meal_timer == 0 and ((s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza)):
-            r += 2
-        elif s.meal_timer == 0 and ((s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza)):
-            r += -1
+        if s.query == 0:
+            # meal
+            if s.meal_timer == 0:
+                if (s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza):
+                    r += 3
+                elif (s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza):
+                    r += 1
+            # drink
+            if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
+                r += 3
+            elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
+                r += 1
 
-        if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-            r += 2
-        elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-            r += -1
-        return r if s.query == 0 else 0
+        # query cost
+        if s.query > 0:
+            if s.h_away_timer > 0:
+                r += -10
+        return r
 
     def make_feature_matrix(self):
         feature_matrix = np.zeros((self.nS, self.feature_vector_length))
@@ -253,7 +284,7 @@ def human_response_meal_drink_grid(assistance_game, reward, **kwargs):
     for idx in range(ag.nS):
         s = ag.get_state(idx)
         # noop
-        if s.query == 0 or s.h_away_timer > 0:
+        if s.query == 0:
             policy[idx, 0] = 1.0
         # meal query
         elif s.query == 1:
@@ -280,6 +311,7 @@ class MealDrinkGridProblem(AssistanceProblem):
                                'discount',
                                'init_h_away_timer',
                                'max_h_away_timer'])
+
     def __init__(self, use_belief_space=True):
         spec = self.Spec(height=2,
                          width=2,
@@ -288,8 +320,8 @@ class MealDrinkGridProblem(AssistanceProblem):
                          drink_pos=(0, 1),
                          horizon=30,
                          discount=0.99,
-                         init_h_away_timer=0,
-                         max_h_away_timer=0)
+                         init_h_away_timer=4,
+                         max_h_away_timer=4)
         human_policy_fn = human_response_meal_drink_grid
         self.assistance_game = MealDrinkGridAG(spec)
         ag = self.assistance_game
@@ -327,7 +359,7 @@ class MealDrinkGridProblem(AssistanceProblem):
         print(s_str)
 
         if self.viewer is None:
-            self.viewer = rendering.Viewer(500,600)
+            self.viewer = rendering.Viewer(500, 600)
             self.viewer.set_bounds(-120, 120, -150, 120)
 
             self.grid = rendering.Grid(start=(-100, -100), end=(100, 100), shape=(h, w))
