@@ -4,14 +4,15 @@
 import numpy as np
 import time
 
-import assistance_games.envs as envs
 from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 from stable_baselines.bench import Monitor
+
 from assistance_games.envs.meal_choice_graph import MealChoiceTimeDependentProblem
 from assistance_games.envs.meal_drink_grid import MealDrinkGridProblem
 from assistance_games.envs.toy_envs import FourThreeMaze, RedBlueAssistanceProblem, WardrobeAssistanceProblem
+
 
 def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
     def render_fn():

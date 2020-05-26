@@ -33,7 +33,7 @@ def pomdp_value_iteration(
     value_backup_fn,
     max_iter=2,
     num_beliefs=30,
-    max_value_iter=20,
+    max_value_iter=30,
     limit_belief_expansion=True
 ):
     """Value Iteration POMDP solver.
@@ -73,7 +73,7 @@ def none_expand_beliefs_fn(*args, **kwargs):
     return None
 
 
-def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=30, limit_belief_expansion=True):
+def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_expansion=True):
     if beliefs is None:
         return sample_random_beliefs(pomdp, num_beliefs)
     else:
