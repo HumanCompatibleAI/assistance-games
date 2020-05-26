@@ -49,7 +49,7 @@ def set_true_reward_model(env):
 def test_fourthree_reward():
     env = envs.FourThreeMaze(horizon=20)
     lower_reward = 1.7
-    upper_reward = 2.0
+    upper_reward = 2.1
     policy = pbvi(env)
     reward = eval_policy(policy, env, n_eval_episodes=100)
     assert lower_reward < reward < upper_reward
