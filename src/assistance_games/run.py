@@ -3,6 +3,7 @@
 
 import numpy as np
 import time
+from pathlib import Path
 
 from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
@@ -64,16 +65,17 @@ def run(env_name, algo_name, seed, **kwargs):
     if algo_name == 'deeprl':
         # We want deeprl to learn the optimal policy without
         # being helped on tracking beliefs
-
         env = env_fns[env_name](use_belief_space=False)
+        # Set up logging
         log_dir = './logs/'
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
         env = Monitor(env, log_dir)
         # Necessary for using LSTMs
         env = get_venv(env, n_envs=1)
     else:
         env = env_fns[env_name](use_belief_space=True)
 
-    for seed in range(5):
+    for seed in range(2):
 
         print('\n seed {}'.format(seed))
         np.random.seed(seed)

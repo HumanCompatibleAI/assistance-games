@@ -77,3 +77,6 @@ For computing a human policy, the human has to use the transition matrix from th
 Normally, in POMDPs, we have a sensor model that gives probabilities O(o |s', a) of observations, given the action taken and the resulting **next state**. However, we are dealing with a very particular type of POMDP, in which our original state space is fully observable and deterministic, with the only uncertainty being the reward; and since all the information about the reward is contained in the human's actions, we can instead treat the human's actions as observations (this can be done as long as the state is fully determined by the actions (i.e. fixed initial positions and deterministic transitions)).
 
 To do that however, we need a sensor model that relates the **previous state** with the observation, instead of the next state; so we include an optional 'back\_sensor', which gives probabilities O'(o' | s, a). This change greatly reduces the complexity of solvers (e.g. in RedBlueAssistanceProblem, it reduces an exponent in the complexity from 24 to 2, changing it from intractable to solvable 1-3 seconds).
+
+## Deep RL:
+To monitor progress of your deep RL training, use the ```deeprl-plotting.ipynb``` notebook. Currently multiple seeds are executed sequentially; this will likely be changed in the future.
