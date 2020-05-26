@@ -11,6 +11,7 @@ from stable_baselines.bench import Monitor
 
 from assistance_games.envs.meal_choice_graph import MealChoiceTimeDependentProblem
 from assistance_games.envs.meal_drink_grid import MealDrinkGridProblem
+from assistance_games.envs.meal_drink_h_acts import MealDrinkGridHumanMovesProblem
 from assistance_games.envs.toy_envs import FourThreeMaze, RedBlueAssistanceProblem, WardrobeAssistanceProblem
 
 
@@ -48,7 +49,8 @@ def run(env_name, algo_name, seed, **kwargs):
         'redblue' : RedBlueAssistanceProblem,
         'wardrobe' : WardrobeAssistanceProblem,
         'mealgraph': MealChoiceTimeDependentProblem,
-        'mealdrink': MealDrinkGridProblem
+        'mealdrink': MealDrinkGridProblem,
+        'mealdrinkhmoves': MealDrinkGridHumanMovesProblem
     }
     algos = {
         'exact' : exact_vi,
