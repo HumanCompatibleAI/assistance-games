@@ -42,7 +42,7 @@ def run(env_name, algo_name, **kwargs):
         'fourthree' : envs.FourThreeMaze,
         'redblue' : envs.RedBlueAssistanceProblem,
         'wardrobe' : envs.WardrobeAssistanceProblem,
-
+        'chocolate' : envs.ChocolateAssistanceProblem,
     }
     algos = {
         'exact' : exact_vi,
@@ -63,7 +63,7 @@ def run(env_name, algo_name, **kwargs):
         env = env_fns[env_name](use_belief_space=True)
 
     policy = algo(env)
-    run_environment(env, policy, dt=0.5, n_episodes=100)
+    run_environment(env, policy, dt=0.4, n_episodes=100)
 
 
 def main():

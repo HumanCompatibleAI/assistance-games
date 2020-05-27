@@ -8,7 +8,16 @@ import numpy as np
 import pyglet.text
 from gym.envs.classic_control import rendering
 from gym.envs.classic_control.rendering import (
-        Geom, make_circle, Viewer, Transform, FilledPolygon)
+        Geom, make_circle, Viewer, Transform, FilledPolygon, make_polygon)
+
+
+def make_ellipse(r_x=10, r_y=10, res=30, filled=True):
+    points = []
+    for i in range(res):
+        ang = 2*np.pi*i / res
+        points.append((np.cos(ang)*r_x, np.sin(ang)*r_y))
+    return make_polygon(points, filled=filled)
+
 
 class Image(rendering.Image):
     def __init__(self, *args, **kwargs):
@@ -69,6 +78,10 @@ class Grid(rendering.Geom):
     def render1(self):
         for line in self.lines:
             line.render()
+
+    def set_color(self, r, g, b):
+        for line in self.lines:
+            line.set_color(r, g, b)
 
 
 class Text(rendering.Geom):
