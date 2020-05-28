@@ -44,7 +44,7 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
     return None
 
 
-def run(env_name, algo_name, seed, output_folder, total_timesteps, **kwargs):
+def run(env_name, algo_name, seed, output_folder, total_timesteps, render, **kwargs):
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : FourThreeMaze,
@@ -71,6 +71,8 @@ def run(env_name, algo_name, seed, output_folder, total_timesteps, **kwargs):
         # Set up logging
         if output_folder:
             output_folder = output_folder + '/'
+        else:
+            output_folder = env_name + '/'
         log_dir = './logs/' + output_folder + 'seed' + str(seed) + '/'
         Path(log_dir).mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +85,7 @@ def run(env_name, algo_name, seed, output_folder, total_timesteps, **kwargs):
     print('\n seed {}'.format(seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, total_timesteps=total_timesteps) if algo_name == 'deeprl' else algo(env)
-    run_environment(env, policy, dt=0.5, n_episodes=5)
+    run_environment(env, policy, dt=0.5, n_episodes=5, render=render)
 
 
 def main():
@@ -94,10 +96,11 @@ def main():
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
     parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
+    parser.add_argument('-r', '--render', type=bool, default=True)
 
     args = parser.parse_args()
 
-    run(args.env_name, args.algo_name, args.seed, args.output_folder, args.total_timesteps)
+    run(args.env_name, args.algo_name, args.seed, args.output_folder, args.total_timesteps, args.render)
 
 
 if __name__ == '__main__':
