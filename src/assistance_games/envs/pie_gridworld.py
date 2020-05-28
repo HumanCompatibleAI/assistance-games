@@ -20,7 +20,7 @@ import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
-class PlateAssistanceGame(AssistanceGame):
+class PieGridworldAssistanceGame(AssistanceGame):
     def __init__(self):
         self.width = 5
         self.height = 6
@@ -131,11 +131,11 @@ class PlateAssistanceGame(AssistanceGame):
         return plate
 
 
-class PlateAssistanceProblem(AssistanceProblem):
+class PieGridworldAssistanceProblem(AssistanceProblem):
     def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
-        assistance_game = PlateAssistanceGame()
+        assistance_game = PieGridworldAssistanceGame()
 
-        human_policy_fn = plate_human_policy_fn
+        human_policy_fn = pie_human_policy_fn
 
         self.ag = assistance_game
 
@@ -143,11 +143,11 @@ class PlateAssistanceProblem(AssistanceProblem):
             assistance_game=assistance_game,
             human_policy_fn=human_policy_fn,
 
-            state_space_builder=plate_state_space_builder,
-            transition_model_fn_builder=plate_transition_model_fn_builder,
-            reward_model_fn_builder=plate_reward_model_fn_builder,
-            sensor_model_fn_builder=plate_sensor_model_fn_builder,
-            observation_model_fn=plate_observation_model_fn_builder(assistance_game),
+            state_space_builder=pie_state_space_builder,
+            transition_model_fn_builder=pie_transition_model_fn_builder,
+            reward_model_fn_builder=pie_reward_model_fn_builder,
+            sensor_model_fn_builder=pie_sensor_model_fn_builder,
+            observation_model_fn=pie_observation_model_fn_builder(assistance_game),
         )
 
     def render(self, mode='human'):
@@ -378,7 +378,7 @@ class PlateAssistanceProblem(AssistanceProblem):
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
 
 
-class PlateProblemStateSpace:
+class PieGridworldProblemStateSpace:
     def __init__(self, ag):
         self.initial_state = ag.initial_state
         self.num_rewards = len(ag.reward_distribution)
@@ -388,10 +388,10 @@ class PlateProblemStateSpace:
         state['reward_idx'] = np.random.randint(self.num_rewards)
         return state
 
-def plate_state_space_builder(ag):
-    return PlateProblemStateSpace(ag)
+def pie_state_space_builder(ag):
+    return PieGridworldProblemStateSpace(ag)
 
-def plate_transition_model_fn_builder(ag, human_policy_fn):
+def pie_transition_model_fn_builder(ag, human_policy_fn):
     def transition_fn(state, action):
         human_policy = human_policy_fn(ag, state['reward_idx'])
         return ag.transition(state, human_policy(state), action)
@@ -399,7 +399,7 @@ def plate_transition_model_fn_builder(ag, human_policy_fn):
     transition_model_fn = partial(FunctionalTransitionModel, fn=transition_fn)
     return transition_model_fn
 
-def plate_reward_model_fn_builder(ag, human_policy_fn):
+def pie_reward_model_fn_builder(ag, human_policy_fn):
     def reward_fn(state, action=None, next_state=None):
         reward = ag.reward_distribution[state['reward_idx']][0]
         return reward(state=state, next_state=next_state)
@@ -407,10 +407,10 @@ def plate_reward_model_fn_builder(ag, human_policy_fn):
     reward_model_fn = partial(FunctionalRewardModel, fn=reward_fn)
     return reward_model_fn
 
-def plate_sensor_model_fn_builder(ag, human_policy_fn):
+def pie_sensor_model_fn_builder(ag, human_policy_fn):
     return SensorModel
 
-def plate_observation_model_fn_builder(ag):
+def pie_observation_model_fn_builder(ag):
     num_ingredients = len(ag.counter_items) - 1
 
     def observation_fn(state, action=None, sense=None):
@@ -458,7 +458,7 @@ def plate_observation_model_fn_builder(ag):
     return observation_model_fn
 
 
-def get_plate_hardcoded_robot_policy(*args, **kwargs):
+def get_pie_hardcoded_robot_policy(*args, **kwargs):
     class Policy:
         def predict(self, ob, state=None):
             t, r_idx = state if state is not None else (0, None)
@@ -533,7 +533,7 @@ def get_plate_hardcoded_robot_policy(*args, **kwargs):
     return Policy()
 
 
-def plate_human_policy_fn(ag, reward):
+def pie_human_policy_fn(ag, reward):
     def human_policy(state):
         S, R, U, L, D, A = range(6)
 

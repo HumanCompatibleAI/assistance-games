@@ -17,7 +17,7 @@ import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
-class ChocolatePieGame(AssistanceGame):
+class PieMDPGame(AssistanceGame):
     def __init__(self):
         human_state_space = Discrete(5)
         human_action_space = Discrete(3)
@@ -94,7 +94,7 @@ class ChocolatePieGame(AssistanceGame):
         return n_s_h, n_s_r
 
 
-def get_chocolate_pie_expert(assistance_game, reward):
+def get_pie_mdp_expert(assistance_game, reward, **kwargs):
     is_R0 = reward[1, 0, 0, 2] > 2.0
 
     P = 1/3 * np.ones(reward.shape[:2])
@@ -110,9 +110,9 @@ def get_chocolate_pie_expert(assistance_game, reward):
     return P
 
 
-class ChocolateAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=get_chocolate_pie_expert, use_belief_space=True):
-        assistance_game = ChocolatePieGame()
+class PieMDPAssistanceProblem(AssistanceProblem):
+    def __init__(self, human_policy_fn=get_pie_mdp_expert, use_belief_space=True):
+        assistance_game = PieMDPGame()
 
         if use_belief_space:
             observation_model_fn = BeliefObservationModel
