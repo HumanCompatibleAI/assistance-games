@@ -2,10 +2,11 @@
 """
 
 from functools import partial
+from pathlib import Path
+import os
+import time
 
 import numpy as np
-import time
-from pathlib import Path
 
 from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
@@ -15,11 +16,11 @@ from assistance_games.envs import (
     FourThreeMaze,
     MealChoiceTimeDependentProblem,
     MealDrinkGridHumanMovesProblem,
+    MealDrinkGridPerfectQueryProblem,
     MealDrinkGridProblem,
     RedBlueAssistanceProblem,
     WardrobeAssistanceProblem,
 )
-
 
 def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
     def render_fn():
@@ -48,8 +49,20 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
     return None
 
 
-def run(env_name, algo_name, seed, logging, **kwargs):
-    log_dir = './logs/' if logging else None
+def run(
+    env_name,
+    algo_name,
+    seed=0,
+    logging=True,
+    output_folder='',
+    **kwargs,
+):
+    if logging is not None:
+        log_dir_base = './logs'
+        log_dir = os.path.join(log_dir_base, output_folder, f'seed{seed}')
+    else:
+        log_dir_base = None
+        log_dir = None
 
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
@@ -58,12 +71,13 @@ def run(env_name, algo_name, seed, logging, **kwargs):
         'wardrobe' : WardrobeAssistanceProblem,
         'mealgraph': MealChoiceTimeDependentProblem,
         'mealdrink': MealDrinkGridProblem,
-        'mealdrinkhmoves': MealDrinkGridHumanMovesProblem
+        'mealdrinkhmoves': MealDrinkGridHumanMovesProblem,
+        'mealperfectquery' : MealDrinkGridPerfectQueryProblem,
     }
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
-        'deeprl' : partial(deep_rl_solve, log_dir=log_dir),
+        'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
         'random' : lambda _ : None,
     }
 
@@ -85,12 +99,10 @@ def run(env_name, algo_name, seed, logging, **kwargs):
     else:
         env = env_fns[env_name](use_belief_space=True)
 
-    for seed in range(2):
-
-        print('\n seed {}'.format(seed))
-        np.random.seed(seed)
-        policy = algo(env, seed=seed) if algo_name == 'deeprl' else algo(env)
-        run_environment(env, policy, dt=0.5, n_episodes=5)
+    print('\n seed {}'.format(seed))
+    np.random.seed(seed)
+    policy = algo(env, seed=seed, **kwargs) if algo_name == 'deeprl' else algo(env)
+    run_environment(env, policy, dt=0.5, n_episodes=5)
 
 
 def main():
@@ -98,11 +110,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
-    # the seed arg is unused, for now we just loop through fixed n seeds
+    parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
+    parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
     parser.add_argument('-nl', '--no_logging', action='store_true')
     args = parser.parse_args()
-
     logging = not args.no_logging
 
     run(
@@ -110,6 +122,8 @@ def main():
         algo_name=args.algo_name,
         seed=args.seed,
         logging=logging,
+        output_folder=args.output_folder,
+        total_timesteps=args.total_timesteps,
     )
 
 

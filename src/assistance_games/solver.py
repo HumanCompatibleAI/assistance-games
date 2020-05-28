@@ -387,7 +387,14 @@ exact_vi = functools.partial(
 )
 
 
-def deep_rl_solve(pomdp, total_timesteps=1000000, learning_rate=1e-3, use_lstm=True, seed=0):
+def deep_rl_solve(
+    pomdp,
+    total_timesteps=1000000,
+    learning_rate=1e-3,
+    use_lstm=True,
+    seed=0,
+    log_dir=None,
+):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
 
@@ -400,7 +407,7 @@ def deep_rl_solve(pomdp, total_timesteps=1000000, learning_rate=1e-3, use_lstm=T
                       ent_coef=0.011,
                       n_steps=256,
                       seed=seed,
-                      tensorboard_log='./logs')
+                      tensorboard_log=log_dir)
     else:
         policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
     policy.learn(total_timesteps=total_timesteps)
