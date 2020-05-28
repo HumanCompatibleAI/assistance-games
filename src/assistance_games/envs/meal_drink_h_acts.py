@@ -327,16 +327,16 @@ class MealDrinkGridHumanMovesProblem(AssistanceProblem):
                                'max_h_away_timer'])
 
     def __init__(self, use_belief_space=True):
-        spec = self.Spec(height=3,
-                         width=3,
-                         meal_pos=(2, 2),
-                         door_pos=(1, 2),
-                         meal_cooking_time=0,
-                         drink_pos=(0, 2),
-                         horizon=25,
+        spec = self.Spec(height=4,
+                         width=4,
+                         meal_pos=(3, 3),
+                         door_pos=(1, 3),
+                         meal_cooking_time=5,
+                         drink_pos=(0, 3),
+                         horizon=30,
                          discount=0.99,
-                         init_h_away_timer=4,
-                         max_h_away_timer=4)
+                         init_h_away_timer=5,
+                         max_h_away_timer=5)
         human_policy_fn = human_response_meal_drink_grid
         self.assistance_game = MealDrinkGridHumanMovesAG(spec)
         ag = self.assistance_game

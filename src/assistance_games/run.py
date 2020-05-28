@@ -53,6 +53,7 @@ def run(
     seed=0,
     logging=True,
     output_folder='',
+    render=True,
     **kwargs,
 ):
     if logging is not None:
@@ -103,7 +104,7 @@ def run(
     print('\n seed {}'.format(seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, policy, dt=0.5, n_episodes=10)
+    run_environment(env, policy, dt=0.5, n_episodes=10, render=render)
 
 
 def main():
@@ -114,17 +115,20 @@ def main():
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
     parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
-    parser.add_argument('-nl', '--no_logging', action='store_true')
+    parser.add_argument('-r', '--render', default=True, action='store_true')
+    parser.add_argument('-nr', '--no_render', dest='render', action='store_false')
+    parser.add_argument('-l', '--logging', default=True, action='store_true')
+    parser.add_argument('-nl', '--no_logging', dest='logging', action='store_false')
     args = parser.parse_args()
-    logging = not args.no_logging
 
     run(
         env_name=args.env_name,
         algo_name=args.algo_name,
         seed=args.seed,
-        logging=logging,
+        logging=args.logging,
         output_folder=args.output_folder,
         total_timesteps=args.total_timesteps,
+        render=args.render,
     )
 
 
