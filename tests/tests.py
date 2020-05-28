@@ -9,6 +9,8 @@ import assistance_games.envs as envs
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.parser import read_pomdp
 
+deep_rl_100k = partial(deep_rl_solve, total_timesteps=100000)
+
 
 def eval_policy(
     policy,
@@ -64,13 +66,13 @@ def test_redblue_assistance_problem_reward():
     assert abs(reward - target_reward) < 0.1
 
 def test_similar_rewards_fourthree():
-    solvers = (pbvi, deep_rl_solve)
+    solvers = (pbvi, deep_rl_100k)
 
     returns = []
 
     for solver in solvers:
         env = envs.FourThreeMaze(horizon=20)
-        if solver == deep_rl_solve:
+        if solver == deep_rl_100k:
             env = get_venv(env)
 
         policy = solver(env)
@@ -81,11 +83,11 @@ def test_similar_rewards_fourthree():
 
 
 def test_similar_rewards_redblue():
-    solvers = (pbvi, exact_vi, deep_rl_solve)
+    solvers = (pbvi, exact_vi, deep_rl_100k)
 
     returns = []
     for solver in solvers:
-        if solver == deep_rl_solve:
+        if solver == deep_rl_100k:
             env = envs.RedBlueAssistanceProblem(use_belief_space=False)
             env = get_venv(env)
         else:

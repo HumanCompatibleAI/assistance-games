@@ -22,17 +22,32 @@ from scipy.spatial import distance_matrix
 
 import cvxpy as cp
 
-from assistance_games.core import POMDPPolicy, TabularBackwardSensorModel
+from assistance_games.core import TabularBackwardSensorModel
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
 
 Alpha = namedtuple('Alpha', ['vector', 'action'])
+
+
+class POMDPPolicy:
+    """Policy from alpha vectors provided by POMDP solvers"""
+    def __init__(self, alphas):
+        self.alpha_vectors = []
+        self.alpha_actions = []
+        for vec, act in alphas:
+            self.alpha_vectors.append(vec)
+            self.alpha_actions.append(act)
+
+    def predict(self, belief, state=None, deterministic=True):
+        idx = np.argmax(self.alpha_vectors @ belief)
+        return self.alpha_actions[idx], state
+
 
 def pomdp_value_iteration(
     pomdp,
     *,
     expand_beliefs_fn,
     value_backup_fn,
-    max_iter=2,
+    max_iter=3,
     num_beliefs=30,
     max_value_iter=30,
     limit_belief_expansion=True,

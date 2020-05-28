@@ -1,0 +1,251 @@
+import numpy as np
+from gym.spaces import Discrete, MultiDiscrete, Box
+import sparse
+
+from assistance_games.utils import sample_distribution
+
+
+### Spaces
+
+class DiscreteDistribution(Discrete):
+    def __init__(self, n, p=None):
+        if p is None:
+            p = (1/n) * np.ones(n)
+
+        super().__init__(n)
+        self.p = p
+
+    def sample_initial_state(self):
+        return sample_distribution(self.p)
+
+    def distribution(self):
+        return self.p
+
+
+### Transition models
+
+class TransitionModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class TabularTransitionModel(TransitionModel):
+    def __init__(self, pomdp, transition_matrix):
+        super().__init__(pomdp)
+        self.transition_matrix = transition_matrix
+
+    @property
+    def T(self):
+        return self.transition_matrix
+
+    def __call__(self):
+        s = self.pomdp.state
+        a = self.pomdp.action
+        return sample_distribution(self.T[s, a])
+
+    def transition_belief(self, belief, action):
+        return belief @ self.T[:, action, :]
+
+
+### Observation models
+
+class ObservationModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class BeliefObservationModel(ObservationModel):
+    def __init__(self, pomdp):
+        super().__init__(pomdp)
+        self.belief = None
+        self.prev_belief = None
+
+    def __call__(self):
+        self.prev_belief = self.belief
+        if self.pomdp.t == 0:
+            self.belief = self.pomdp.state_space.distribution()
+        else:
+            self.belief = self.pomdp.sensor_model.update_belief(self.belief)
+        return self.belief
+
+    @property
+    def space(self):
+        return Box(low=0.0, high=1.0, shape=(self.pomdp.state_space.n,))
+
+class SenseObservationModel(ObservationModel):
+    def __call__(self):
+        return self.sensor_model.sense
+
+    @property
+    def space(self):
+        return self.pomdp.sensor_model.space
+
+class DiscreteFeatureSenseObservationModel(ObservationModel):
+    def __init__(self, pomdp, feature_extractor):
+        super().__init__(pomdp)
+        self.feature_extractor = feature_extractor
+
+    def __call__(self):
+        feature = self.feature_extractor(self.pomdp.state)
+
+        sense = self.pomdp.sensor_model.sense
+        if sense is None:
+            sense = self.pomdp.sensor_model.space.sample()
+
+        return np.array([feature, sense])
+
+    @property
+    def space(self):
+        num_senses = self.pomdp.sensor_model.space.n
+        num_features = self.feature_extractor.n
+        return MultiDiscrete([num_features, num_senses])
+
+class FeatureSenseObservationModel(ObservationModel):
+    def __init__(self, pomdp, feature_extractor):
+        super().__init__(pomdp)
+        self.feature_extractor = feature_extractor
+
+    def __call__(self):
+        feature = self.feature_extractor(self.pomdp.state)
+
+        sense = self.pomdp.sensor_model.sense
+        if sense is None:
+            sense = self.pomdp.sensor_model.space.sample()
+        obs = np.zeros((len(feature) + self.pomdp.sensor_model.space.n, 1))
+        obs[:len(feature), 0] = feature
+        obs[len(feature) + sense, 0] = 1
+        return obs # np.array([feature, sense])
+
+    @property
+    def space(self):
+        num_senses = self.pomdp.sensor_model.space.n
+        num_features = self.feature_extractor.n
+        return Box(low=0.0, high=self.pomdp.assistance_game.max_feature_value, shape=(num_features + num_senses, 1))
+        # MultiDiscrete([num_features, num_senses])
+        #return Discrete(num_features + num_senses)
+
+
+### Sensor models
+
+class SensorModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class TabularForwardSensorModel(SensorModel):
+    def __init__(self, pomdp, sensor):
+        self.pomdp = pomdp
+        self.sensor = sensor
+        self.sense = None
+
+    def __call__(self):
+        return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
+
+    def sample_sense(self, *, state=None, action=None, next_state=None):
+        self.sense = sample_distribution(self.sensor[action, next_state])
+        return self.sense
+
+    def update_belief(self, belief, action=None, sense=None):
+        if action is None:
+            action = self.pomdp.action
+        if sense is None:
+            sense = self.sense
+
+        new_belief = self.pomdp.transition_model.transition_belief(belief, action=action) * self.sensor[action, :, sense]
+        new_belief /= new_belief.sum()
+        return new_belief
+
+    @property
+    def space(self):
+        num_senses = self.sensor.shape[-1]
+        return Discrete(num_senses)
+
+
+class TabularBackwardSensorModel(SensorModel):
+    def __init__(self, pomdp, back_sensor):
+        self.pomdp = pomdp
+        self.back_sensor = back_sensor
+        self.sense = None
+
+    def __call__(self):
+        return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
+
+    def sample_sense(self, *, state=None, action=None, next_state=None):
+        self.sense = sample_distribution(self.back_sensor[action, state])
+        return self.sense
+
+    def update_belief(self, belief, action=None, sense=None):
+        if action is None:
+            action = self.pomdp.action
+        if sense is None:
+            sense = self.sense
+
+        new_belief = self.pomdp.transition_model.transition_belief(belief * self.back_sensor[action, :, sense], action=action)
+        new_belief /= new_belief.sum()
+        return new_belief
+
+    @property
+    def space(self):
+        num_senses = self.back_sensor.shape[-1]
+        return Discrete(num_senses)
+
+
+### Reward models
+
+class RewardModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+class TabularRewardModel(RewardModel):
+    def __init__(self, pomdp, reward_matrix):
+        super().__init__(pomdp)
+        self.reward_matrix = reward_matrix
+
+    @property
+    def R(self):
+        return self.reward_matrix
+
+    def __call__(self):
+        prev_state = self.pomdp.prev_state
+        action = self.pomdp.action
+        state = self.pomdp.state
+        return self.R[prev_state, action, state]
+
+class BeliefRewardModel(RewardModel):
+    def __init__(self, pomdp, reward_matrix):
+        super().__init__(pomdp)
+        self.reward_matrix = reward_matrix
+
+    @property
+    def R(self):
+        return self.reward_matrix
+
+    def __call__(self):
+        prev_belief = self.pomdp.observation_model.prev_belief
+        action = self.pomdp.action
+        belief = self.pomdp.observation_model.belief
+        return prev_belief @ self.R[:, action, :] @ belief
+
+
+### Termination models
+
+class TerminationModel:
+    def __init__(self, pomdp):
+        self.pomdp = pomdp
+
+    def __call__(self):
+        pass
+
+
+class NoTerminationModel(TerminationModel):
+    def __call__(self):
+        return False
