@@ -45,11 +45,7 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
 
 
 def run(env_name, algo_name, seed, logging, **kwargs):
-    if logging:
-        log_dir = './logs/'
-        Path(log_dir).mkdir(parents=True, exist_ok=True)
-    else:
-        log_dir = None
+    log_dir = './logs/' if logging else None
 
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
@@ -78,6 +74,7 @@ def run(env_name, algo_name, seed, logging, **kwargs):
             # This import can take 10+ seconds, so only do it
             # if necessary
             from stable_baselines.bench import Monitor
+            Path(log_dir).mkdir(parents=True, exist_ok=True)
             env = Monitor(env, log_dir)
         # Necessary for using LSTMs
         env = get_venv(env, n_envs=1)
