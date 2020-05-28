@@ -42,8 +42,8 @@ class MealDrinkGridAG(AssistanceGame):
 
     Overall this env demonstrates
     --  option value preservation: if Alice is initally away, the robot would wait for her to appear and query her
-        for the correct meal / drink choices (instead of guessing meal / drink and risking making something Alice doesn't
-        want)
+        for the correct meal / drink choices (instead of guessing meal / drink and risking making something Alice does
+        not want)
     --  information-conditional plans: depending on how long Alice is away and how long is the env horizon, the robot
         would either
             - wait for Alice, ask her about both ouptions, and make both correctly
@@ -84,7 +84,7 @@ class MealDrinkGridAG(AssistanceGame):
                                                 h_away_timer=self.max_h_away_timer + 1,
                                                 query=self.n_queries + 1)
 
-        self.one_hot_features = {'pos_r_x', 'pos_r_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
+        self.one_hot_features = {'pos_r_x', 'pos_r_y', 'meal', 'drink', 'h_away_timer', 'query'}
         num_regular_features = len(init_state) - len(self.one_hot_features)
         len_one_hot_features = 0
         for feature in self.one_hot_features:
@@ -152,11 +152,6 @@ class MealDrinkGridAG(AssistanceGame):
                         new_meal = 2
                     elif a_r == 6:
                         new_meal = 3
-                # elif s.meal in [2, 3]:
-                #     # tick down the baking timer if it's not 0
-                #     if s.meal_timer > 0:
-                #         new_meal_timer -= 1
-
             # drink
             elif (s.pos_r_y, s.pos_r_x + 1) == self.drink_pos:
                 if s.drink == 0:
@@ -238,19 +233,19 @@ class MealDrinkGridAG(AssistanceGame):
             # meal
             if s.meal_timer == 0:
                 if (s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza):
-                    r += 3
+                    r += 2
                 elif (s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza):
-                    r += 1
+                    r += -1
             # drink
             if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-                r += 3
+                r += 2
             elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-                r += 1
+                r += -1
 
         # query cost
         if s.query > 0:
             if s.h_away_timer > 0:
-                r += -10
+                r += -3
         return r
 
     def make_feature_matrix(self):
@@ -313,11 +308,11 @@ class MealDrinkGridProblem(AssistanceProblem):
                                'max_h_away_timer'])
 
     def __init__(self, use_belief_space=True):
-        spec = self.Spec(height=2,
-                         width=2,
-                         meal_pos=(1, 1),
-                         meal_cooking_time=0,
-                         drink_pos=(0, 1),
+        spec = self.Spec(height=4,
+                         width=4,
+                         meal_pos=(3, 3),
+                         meal_cooking_time=4,
+                         drink_pos=(0, 3),
                          horizon=30,
                          discount=0.99,
                          init_h_away_timer=4,

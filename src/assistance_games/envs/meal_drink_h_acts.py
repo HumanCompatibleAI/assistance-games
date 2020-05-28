@@ -29,8 +29,10 @@ from assistance_games.parser import read_pomdp
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, sample_distribution, dict_to_sparse
 
+
 class MealDrinkGridHumanMovesAG(AssistanceGame):
     State = namedtuple('State', ['r_x', 'r_y', 'h_x', 'h_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'])
+
     def __init__(self, spec):
         self.height = spec.height
         self.width = spec.width
@@ -51,7 +53,7 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
         self.state_num, self.num_state, self.nS = self.enumerate_states()
         print('The number of states is ', self.nS)
 
-        init_state = self.State(r_y=0,
+        self.init_state = self.State(r_y=0,
                                 r_x=0,
                                 h_x=self.door_pos[1],
                                 h_y=self.door_pos[0],
@@ -60,8 +62,9 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
                                 drink=0,
                                 h_away_timer=spec.init_h_away_timer,
                                 query=0)
+
         init_state_dist = np.zeros(self.nS)
-        init_state_dist[self.get_idx(init_state)] = 1.0
+        init_state_dist[self.get_idx(self.init_state)] = 1.0
         transition, rewards_dist = self.make_transition_and_reward_matrices()
 
         # How many different values can each state feature take. This shouldn't be interpreted as a state!
@@ -76,10 +79,10 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
                                                 query=self.n_queries + 1)
 
         self.one_hot_features = {'r_x', 'r_y', 'h_x', 'h_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
-        num_regular_features = len(init_state) - len(self.one_hot_features)
+        num_regular_features = len(self.init_state) - len(self.one_hot_features)
         len_one_hot_features = 0
         for feature in self.one_hot_features:
-            assert hasattr(init_state, feature)
+            assert hasattr(self.init_state, feature)
             len_one_hot_features += getattr(self.discrete_feature_dims, feature)
         self.feature_vector_length = num_regular_features + len_one_hot_features
         self.feature_matrix = self.make_feature_matrix()
@@ -223,7 +226,7 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
 
     def make_transition_and_reward_matrices(self):
         T_dict = {}
-        reward_dicts = {(True, True): {}, (True, False): {}, (False, True): {}, (False, False):{}}
+        reward_dicts = {(True, True): {}, (True, False): {}, (False, True): {}, (False, False): {}}
 
         T_shape = (self.nS, self.human_action_space.n, self.robot_action_space.n, self.nS)
         for idx in range(self.nS):
@@ -244,16 +247,24 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
 
     def reward_fn(self, s, prefer_pizza=False, prefer_lemonade=False):
         r = 0
-        if s.meal_timer == 0 and ((s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza)):
-            r += 2
-        elif s.meal_timer == 0 and ((s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza)):
-            r += -1
+        if s.query == 0:
+            # meal
+            if s.meal_timer == 0:
+                if (s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza):
+                    r += 2
+                elif (s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza):
+                    r += -1
+            # drink
+            if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
+                r += 2
+            elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
+                r += -1
 
-        if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-            r += 2
-        elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-            r += -1
-        return r if s.query == 0 else 0
+        # query cost
+        if s.query > 0:
+            if s.h_away_timer > 0:
+                r += -3
+        return r
 
     def make_feature_matrix(self):
         feature_matrix = np.zeros((self.nS, self.feature_vector_length))
@@ -286,7 +297,7 @@ def human_response_meal_drink_grid(assistance_game, reward, **kwargs):
     for idx in range(ag.nS):
         s = ag.get_state(idx)
         # noop
-        if s.query == 0 or s.h_away_timer > 0:
+        if s.query == 0:
             policy[idx, 0] = 1.0
         # meal query
         elif s.query == 1:
@@ -314,6 +325,7 @@ class MealDrinkGridHumanMovesProblem(AssistanceProblem):
                                'discount',
                                'init_h_away_timer',
                                'max_h_away_timer'])
+
     def __init__(self, use_belief_space=True):
         spec = self.Spec(height=3,
                          width=3,
@@ -352,17 +364,17 @@ class MealDrinkGridHumanMovesProblem(AssistanceProblem):
         rew_idx = self.state // nS0
         s = self.assistance_game.get_state(idx)
         s_str = 'pos: ({}, {}), meal: {}, meal_timer: {}, drink: {}, h_away_timer: {}'.format(s.r_y,
-                                                                                   s.r_x,
-                                                                                   s.meal,
-                                                                                   s.meal_timer,
-                                                                                   s.drink,
-                                                                                   s.h_away_timer)
+                                                                                              s.r_x,
+                                                                                              s.meal,
+                                                                                              s.meal_timer,
+                                                                                              s.drink,
+                                                                                              s.h_away_timer)
         if s.query:
             s_str = s_str + ' query={}'.format(s.query)
         print(s_str)
 
         if self.viewer is None:
-            self.viewer = rendering.Viewer(500,600)
+            self.viewer = rendering.Viewer(500, 600)
             self.viewer.set_bounds(-120, 120, -150, 120)
 
             self.grid = rendering.Grid(start=(-100, -100), end=(100, 100), shape=(h, w))
@@ -428,8 +440,8 @@ class MealDrinkGridHumanMovesProblem(AssistanceProblem):
         self.viewer.add_onetime(human)
         self.human_transform.set_translation(*human_coords)
 
-        # clear all geoms except for the grid and door
-        if s.meal == 0 and s.drink == 0:
+        # clear all geoms except for the grid and door on env reset
+        if s.meal == self.assistance_game.init_state.meal and s.drink == self.assistance_game.init_state.drink:
             self.viewer.geoms = [self.grid]
         self.viewer.add_geom(door)
         self.door_transform.set_translation(*door_coords)
@@ -458,20 +470,3 @@ class MealDrinkGridHumanMovesProblem(AssistanceProblem):
             self.viewer.add_geom(tea)
 
         return self.viewer.render(return_rgb_array=mode == 'rgb_array')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
