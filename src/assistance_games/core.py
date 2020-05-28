@@ -57,6 +57,13 @@ class TabularTransitionModel(TransitionModel):
     def transition_belief(self, belief, action):
         return belief @ self.T[:, action, :]
 
+class FunctionalTransitionModel(TransitionModel):
+    def __init__(self, pomdp, fn):
+        super().__init__(pomdp)
+        self.fn = fn
+
+    def __call__(self):
+        return self.fn(self.pomdp.state, self.pomdp.action)
 
 ### Observation models
 
@@ -114,20 +121,31 @@ class FeatureSenseObservationModel(ObservationModel):
         return MultiDiscrete([num_features, num_senses])
 
 
+class FunctionalObservationModel(ObservationModel):
+    def __init__(self, pomdp, fn, space):
+        super().__init__(pomdp)
+        self.fn = fn
+        self.space = space
+
+    def __call__(self):
+        state = self.pomdp.state
+        sense = self.pomdp.sensor_model.sense
+        return self.fn(state=state, sense=sense)
+
 ### Sensor models
 
 class SensorModel:
     def __init__(self, pomdp):
         self.pomdp = pomdp
+        self.sense = None
 
     def __call__(self):
         pass
 
 class TabularForwardSensorModel(SensorModel):
     def __init__(self, pomdp, sensor):
-        self.pomdp = pomdp
+        super().__init__(pomdp)
         self.sensor = sensor
-        self.sense = None
 
     def __call__(self):
         return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
@@ -154,9 +172,8 @@ class TabularForwardSensorModel(SensorModel):
 
 class TabularBackwardSensorModel(SensorModel):
     def __init__(self, pomdp, back_sensor):
-        self.pomdp = pomdp
+        super().__init__(pomdp)
         self.back_sensor = back_sensor
-        self.sense = None
 
     def __call__(self):
         return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
@@ -219,6 +236,17 @@ class BeliefRewardModel(RewardModel):
         action = self.pomdp.action
         belief = self.pomdp.observation_model.belief
         return prev_belief @ self.R[:, action, :] @ belief
+
+class FunctionalRewardModel(RewardModel):
+    def __init__(self, pomdp, fn):
+        super().__init__(pomdp)
+        self.fn = fn
+
+    def __call__(self):
+        prev_state = self.pomdp.prev_state
+        action = self.pomdp.action
+        state = self.pomdp.state
+        return self.fn(prev_state, action, state)
 
 
 ### Termination models
@@ -309,7 +337,7 @@ class AssistanceGame:
         robot_action_space,
         transition,
         reward_distribution,
-        initial_state_distribution,
+        initial_state_distribution=None,
         horizon=None,
         discount=1.0,
     ):
@@ -484,7 +512,7 @@ def back_sensor_model_fn_builder(ag, human_policy_fn):
     sensor_model_fn = functools.partial(TabularBackwardSensorModel, back_sensor=back_sensor)
     return sensor_model_fn
 
-def state_space_builder(ag):
+def discrete_state_space_builder(ag):
     num_rewards = len(ag.reward_distribution)
     num_states = ag.state_space.n * num_rewards
     nS = num_states
@@ -503,6 +531,7 @@ class AssistanceProblem(POMDP):
         self,
         assistance_game,
         human_policy_fn,
+        state_space_builder=discrete_state_space_builder,
         transition_model_fn_builder=tabular_transition_model_fn_builder,
         reward_model_fn_builder=discrete_reward_model_fn_builder,
         sensor_model_fn_builder=back_sensor_model_fn_builder,
@@ -546,10 +575,16 @@ class POMDPPolicy:
 
 ### Human Policies
 
-def random_policy_fn(assistance_game, reward):
+def tabular_random_policy_fn(assistance_game, reward):
     num_states = assistance_game.state_space.n
     num_actions = assistance_game.human_action_space.n
     return np.full((num_states, num_actions), 1 / num_actions)
+
+
+def functional_random_policy_fn(assistance_game, reward):
+    def policy(state):
+        return assistance_game.human_action_space.sample()
+    return policy
 
 
 def get_human_policy(assistance_game, reward, max_discount=0.9, num_iter=30, robot_model='optimal', hard=False):

@@ -43,12 +43,14 @@ def run(env_name, algo_name, **kwargs):
         'redblue' : envs.RedBlueAssistanceProblem,
         'wardrobe' : envs.WardrobeAssistanceProblem,
         'chocolate' : envs.ChocolateAssistanceProblem,
+        'plate' : envs.PlateAssistanceProblem,
     }
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
         'deeprl' : deep_rl_solve,
         'random' : lambda _ : None,
+        'hardcoded' : envs.get_plate_hardcoded_robot_policy,
     }
 
     algo = algos[algo_name]
