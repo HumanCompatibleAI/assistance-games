@@ -1,6 +1,9 @@
 """Ready-to-use POMDP and AssistanceProblem environments.
 """
 from collections import namedtuple, Counter
+from copy import copy, deepcopy
+from itertools import product
+
 import os
 import itertools
 
@@ -23,7 +26,7 @@ from assistance_games.core import (
     FunctionalTransitionModel,
     FunctionalRewardModel,
     SensorModel,
-    FeatureSenseObservationModel,
+    DiscreteFeatureSenseObservationModel,
     discrete_reward_model_fn_builder,
 )
 
@@ -288,7 +291,7 @@ class RedBlueAssistanceProblem(AssistanceProblem):
         else:
             feature_extractor = lambda state : state % assistance_game.state_space.n
             setattr(feature_extractor, 'n', assistance_game.state_space.n)
-            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+            observation_model_fn = partial(DiscreteFeatureSenseObservationModel, feature_extractor=feature_extractor)
 
         reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
 
@@ -538,7 +541,7 @@ class WardrobeAssistanceProblem(AssistanceProblem):
         else:
             feature_extractor = lambda state : state % self.assistance_game.state_space.n
             setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
-            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+            observation_model_fn = partial(DiscreteFeatureSenseObservationModel, feature_extractor=feature_extractor)
 
         reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
 
@@ -548,7 +551,6 @@ class WardrobeAssistanceProblem(AssistanceProblem):
             observation_model_fn=observation_model_fn,
             reward_model_fn_builder=reward_model_fn_builder,
         )
-
 
     def render(self, mode='human'):
         size = self.assistance_game.size
@@ -723,7 +725,7 @@ class ChocolateAssistanceProblem(AssistanceProblem):
         else:
             feature_extractor = lambda state : state % assistance_game.state_space.n
             setattr(feature_extractor, 'n', assistance_game.state_space.n)
-            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+            observation_model_fn = partial(DiscreteFeatureSenseObservationModel, feature_extractor=feature_extractor)
 
         reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
 

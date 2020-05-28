@@ -11,7 +11,6 @@ and deep rl solvers.
 - Survey of point-based solvers, has clearest presentation:
     https://www.cs.mcgill.ca/~jpineau/files/jpineau-jaamas12-finalcopy.pdf
 """
-
 from collections import namedtuple
 import functools
 import time
@@ -23,27 +22,42 @@ from scipy.spatial import distance_matrix
 
 import cvxpy as cp
 
-from assistance_games.core import POMDPPolicy, TabularBackwardSensorModel
+from assistance_games.core import TabularBackwardSensorModel
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
 
 Alpha = namedtuple('Alpha', ['vector', 'action'])
+
+
+class POMDPPolicy:
+    """Policy from alpha vectors provided by POMDP solvers"""
+    def __init__(self, alphas):
+        self.alpha_vectors = []
+        self.alpha_actions = []
+        for vec, act in alphas:
+            self.alpha_vectors.append(vec)
+            self.alpha_actions.append(act)
+
+    def predict(self, belief, state=None, deterministic=True):
+        idx = np.argmax(self.alpha_vectors @ belief)
+        return self.alpha_actions[idx], state
+
 
 def pomdp_value_iteration(
     pomdp,
     *,
     expand_beliefs_fn,
     value_backup_fn,
-    max_iter=2,
+    max_iter=3,
     num_beliefs=30,
-    max_value_iter=10,
+    max_value_iter=30,
     limit_belief_expansion=True,
+    **kwargs,
 ):
     """Value Iteration POMDP solver.
 
     Implements different exact or approximate solvers, differing on how
     beliefs are selected (if any), and how alpha values are updated.
     """
-
     num_value_iter = min(max_value_iter, get_effective_horizon(pomdp))
     nS = pomdp.state_space.n
 
@@ -76,7 +90,7 @@ def none_expand_beliefs_fn(*args, **kwargs):
     return None
 
 
-def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=30, limit_belief_expansion=True):
+def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_expansion=True):
     if beliefs is None:
         return sample_random_beliefs(pomdp, num_beliefs)
     else:
@@ -374,14 +388,29 @@ exact_vi = functools.partial(
 )
 
 
-def deep_rl_solve(pomdp, total_timesteps=100000, learning_rate=1e-3, use_lstm=True):
+def deep_rl_solve(
+    pomdp,
+    total_timesteps=1000000,
+    learning_rate=1e-3,
+    use_lstm=True,
+    seed=0,
+    log_dir=None,
+):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
 
     if use_lstm:
-        policy = PPO2(MlpLstmPolicy, pomdp, learning_rate=learning_rate, nminibatches=1, policy_kwargs=dict(n_lstm=32))
+        policy = PPO2(MlpLstmPolicy,
+                      pomdp,
+                      learning_rate=learning_rate,
+                      nminibatches=1,
+                      policy_kwargs=dict(n_lstm=32),
+                      ent_coef=0.011,
+                      n_steps=256,
+                      seed=seed,
+                      tensorboard_log=log_dir)
     else:
-        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate)
+        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
     policy.learn(total_timesteps=total_timesteps)
     return policy
 
