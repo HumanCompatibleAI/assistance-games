@@ -11,7 +11,6 @@ and deep rl solvers.
 - Survey of point-based solvers, has clearest presentation:
     https://www.cs.mcgill.ca/~jpineau/files/jpineau-jaamas12-finalcopy.pdf
 """
-import pathlib
 from collections import namedtuple
 import functools
 import time
@@ -36,7 +35,7 @@ def pomdp_value_iteration(
     max_iter=2,
     num_beliefs=30,
     max_value_iter=30,
-    limit_belief_expansion=True
+    limit_belief_expansion=True,
 ):
     """Value Iteration POMDP solver.
 

@@ -91,6 +91,26 @@ class SenseObservationModel(ObservationModel):
     def space(self):
         return self.pomdp.sensor_model.space
 
+class DiscreteFeatureSenseObservationModel(ObservationModel):
+    def __init__(self, pomdp, feature_extractor):
+        super().__init__(pomdp)
+        self.feature_extractor = feature_extractor
+
+    def __call__(self):
+        feature = self.feature_extractor(self.pomdp.state)
+
+        sense = self.pomdp.sensor_model.sense
+        if sense is None:
+            sense = self.pomdp.sensor_model.space.sample()
+
+        return np.array([feature, sense])
+
+    @property
+    def space(self):
+        num_senses = self.pomdp.sensor_model.space.n
+        num_features = self.feature_extractor.n
+        return MultiDiscrete([num_features, num_senses])
+
 class FeatureSenseObservationModel(ObservationModel):
     def __init__(self, pomdp, feature_extractor):
         super().__init__(pomdp)

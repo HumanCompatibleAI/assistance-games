@@ -1,6 +1,8 @@
 """Minimal script to solve and render an environment.
 """
 
+from functools import partial
+
 import numpy as np
 import time
 from pathlib import Path
@@ -8,7 +10,6 @@ from pathlib import Path
 from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
-from stable_baselines.bench import Monitor
 
 from assistance_games.envs.meal_choice_graph import MealChoiceTimeDependentProblem
 from assistance_games.envs.meal_drink_grid import MealDrinkGridProblem
@@ -43,7 +44,13 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
     return None
 
 
-def run(env_name, algo_name, seed, **kwargs):
+def run(env_name, algo_name, seed, logging, **kwargs):
+    if logging:
+        log_dir = './logs/'
+        Path(log_dir).mkdir(parents=True, exist_ok=True)
+    else:
+        log_dir = None
+
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : FourThreeMaze,
@@ -56,7 +63,7 @@ def run(env_name, algo_name, seed, **kwargs):
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
-        'deeprl' : deep_rl_solve,
+        'deeprl' : partial(deep_rl_solve, log_dir=log_dir),
         'random' : lambda _ : None,
     }
 
@@ -67,9 +74,11 @@ def run(env_name, algo_name, seed, **kwargs):
         # being helped on tracking beliefs
         env = env_fns[env_name](use_belief_space=False)
         # Set up logging
-        log_dir = './logs/'
-        Path(log_dir).mkdir(parents=True, exist_ok=True)
-        env = Monitor(env, log_dir)
+        if log_dir is not None:
+            # This import can take 10+ seconds, so only do it
+            # if necessary
+            from stable_baselines.bench import Monitor
+            env = Monitor(env, log_dir)
         # Necessary for using LSTMs
         env = get_venv(env, n_envs=1)
     else:
@@ -90,9 +99,17 @@ def main():
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     # the seed arg is unused, for now we just loop through fixed n seeds
     parser.add_argument('-s', '--seed', type=int, default=0)
+    parser.add_argument('-nl', '--no_logging', action='store_true')
     args = parser.parse_args()
 
-    run(args.env_name, args.algo_name, args.seed)
+    logging = not args.no_logging
+
+    run(
+        env_name=args.env_name,
+        algo_name=args.algo_name,
+        seed=args.seed,
+        logging=logging,
+    )
 
 
 if __name__ == '__main__':
