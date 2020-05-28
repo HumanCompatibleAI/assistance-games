@@ -14,7 +14,7 @@ from assistance_games.envs.meal_choice_graph import MealChoiceTimeDependentProbl
 from assistance_games.envs.meal_drink_grid import MealDrinkGridProblem
 from assistance_games.envs.meal_drink_h_acts import MealDrinkGridHumanMovesProblem
 from assistance_games.envs.toy_envs import FourThreeMaze, RedBlueAssistanceProblem, WardrobeAssistanceProblem
-from assistance_games.envs.meal_drink_h_acts_reward_queries import MealDrinkGridPerfectQueryProblem
+from assistance_games.envs.meal_drink_reward_queries import MealDrinkGridPerfectQueryProblem
 
 
 def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
