@@ -2,10 +2,16 @@ import numpy as np
 from scipy.special import logsumexp
 
 
-def random_policy_fn(assistance_game, reward):
+def tabular_random_policy_fn(assistance_game, reward):
     num_states = assistance_game.state_space.n
     num_actions = assistance_game.human_action_space.n
     return np.full((num_states, num_actions), 1 / num_actions)
+
+
+def functional_random_policy_fn(assistance_game, reward):
+    def policy(state):
+        return assistance_game.human_action_space.sample()
+    return policy
 
 
 def get_human_policy(assistance_game, reward, max_discount=0.9, num_iter=30, robot_model='optimal', hard=False, **kwargs):

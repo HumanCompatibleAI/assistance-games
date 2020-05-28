@@ -12,15 +12,7 @@ from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
-from assistance_games.envs import (
-    FourThreeMaze,
-    MealChoiceTimeDependentProblem,
-    MealDrinkGridHumanMovesProblem,
-    MealDrinkGridPerfectQueryProblem,
-    MealDrinkGridProblem,
-    RedBlueAssistanceProblem,
-    WardrobeAssistanceProblem,
-)
+import assistance_games.envs as envs
 
 def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
     def render_fn():
@@ -49,6 +41,12 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
     return None
 
 
+def get_hardcoded_policy(env, *args, **kwargs):
+    if isinstance(env, envs.PlateAssistanceProblem):
+        return envs.get_plate_hardcoded_robot_policy(env, *args, **kwargs)
+    else:
+        raise Error("No hardcoded robot policy for this environment.")
+
 def run(
     env_name,
     algo_name,
@@ -66,13 +64,13 @@ def run(
 
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
-        'fourthree' : FourThreeMaze,
-        'redblue' : RedBlueAssistanceProblem,
-        'wardrobe' : WardrobeAssistanceProblem,
-        'mealgraph': MealChoiceTimeDependentProblem,
-        'mealdrink': MealDrinkGridProblem,
-        'mealdrinkhmoves': MealDrinkGridHumanMovesProblem,
-        'mealperfectquery' : MealDrinkGridPerfectQueryProblem,
+        'fourthree' : envs.FourThreeMaze,
+        'redblue' : envs.RedBlueAssistanceProblem,
+        'wardrobe' : envs.WardrobeAssistanceProblem,
+        'mealgraph': envs.MealChoiceTimeDependentProblem,
+        'mealdrink': envs.MealDrinkGridProblem,
+        'mealdrinkhmoves': envs.MealDrinkGridHumanMovesProblem,
+        'mealperfectquery' : envs.MealDrinkGridPerfectQueryProblem,
         'chocolate' : envs.ChocolateAssistanceProblem,
         'plate' : envs.PlateAssistanceProblem,
     }
@@ -81,7 +79,7 @@ def run(
         'pbvi' : pbvi,
         'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
         'random' : lambda *args, **kwargs : None,
-        'hardcoded' : envs.get_plate_hardcoded_robot_policy,
+        'hardcoded' : get_hardcoded_policy,
     }
 
     algo = algos[algo_name]

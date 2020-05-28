@@ -48,6 +48,14 @@ class TabularTransitionModel(TransitionModel):
     def transition_belief(self, belief, action):
         return belief @ self.T[:, action, :]
 
+class FunctionalTransitionModel(TransitionModel):
+    def __init__(self, pomdp, fn):
+        super().__init__(pomdp)
+        self.fn = fn
+
+    def __call__(self):
+        return self.fn(self.pomdp.state, self.pomdp.action)
+
 
 ### Observation models
 
@@ -115,34 +123,44 @@ class FeatureSenseObservationModel(ObservationModel):
         sense = self.pomdp.sensor_model.sense
         if sense is None:
             sense = self.pomdp.sensor_model.space.sample()
+
         obs = np.zeros((len(feature) + self.pomdp.sensor_model.space.n, 1))
         obs[:len(feature), 0] = feature
         obs[len(feature) + sense, 0] = 1
-        return obs # np.array([feature, sense])
+        return obs
 
     @property
     def space(self):
         num_senses = self.pomdp.sensor_model.space.n
         num_features = self.feature_extractor.n
         return Box(low=0.0, high=self.pomdp.assistance_game.max_feature_value, shape=(num_features + num_senses, 1))
-        # MultiDiscrete([num_features, num_senses])
-        #return Discrete(num_features + num_senses)
 
+
+class FunctionalObservationModel(ObservationModel):
+    def __init__(self, pomdp, fn, space):
+        super().__init__(pomdp)
+        self.fn = fn
+        self.space = space
+
+    def __call__(self):
+        state = self.pomdp.state
+        sense = self.pomdp.sensor_model.sense
+        return self.fn(state=state, sense=sense)
 
 ### Sensor models
 
 class SensorModel:
     def __init__(self, pomdp):
         self.pomdp = pomdp
+        self.sense = None
 
     def __call__(self):
         pass
 
 class TabularForwardSensorModel(SensorModel):
     def __init__(self, pomdp, sensor):
-        self.pomdp = pomdp
+        super().__init__(pomdp)
         self.sensor = sensor
-        self.sense = None
 
     def __call__(self):
         return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
@@ -169,9 +187,8 @@ class TabularForwardSensorModel(SensorModel):
 
 class TabularBackwardSensorModel(SensorModel):
     def __init__(self, pomdp, back_sensor):
-        self.pomdp = pomdp
+        super().__init__(pomdp)
         self.back_sensor = back_sensor
-        self.sense = None
 
     def __call__(self):
         return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
@@ -234,6 +251,17 @@ class BeliefRewardModel(RewardModel):
         action = self.pomdp.action
         belief = self.pomdp.observation_model.belief
         return prev_belief @ self.R[:, action, :] @ belief
+
+class FunctionalRewardModel(RewardModel):
+    def __init__(self, pomdp, fn):
+        super().__init__(pomdp)
+        self.fn = fn
+
+    def __call__(self):
+        prev_state = self.pomdp.prev_state
+        action = self.pomdp.action
+        state = self.pomdp.state
+        return self.fn(prev_state, action, state)
 
 
 ### Termination models

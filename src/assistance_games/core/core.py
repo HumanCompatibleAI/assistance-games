@@ -94,7 +94,7 @@ class AssistanceGame:
         robot_action_space,
         transition,
         reward_distribution,
-        initial_state_distribution,
+        initial_state_distribution=None,
         horizon=None,
         discount=1.0,
     ):
