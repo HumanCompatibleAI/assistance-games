@@ -46,7 +46,7 @@ class MealDrinkGridPerfectQuery(AssistanceGame):
         # self.meal_reward_possibilities = list(product([0, 3], [2, 0]))
         # one below didn't
         # self.meal_reward_possibilities = list(product([-2, 1], [0, 3]))
-        self.meal_reward_possibilities = list(product([-2.5, .5], [-.5, 2.5]))
+        self.meal_reward_possibilities = list(product([0, 3], [2, 5]))
         n_world_actions = 7
         self.n_queries = 2
         # robot actions are noop, 4 actions for moving, 2 for cooking, and two queries
