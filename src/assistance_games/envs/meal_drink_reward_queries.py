@@ -253,8 +253,6 @@ class MealDrinkGridPerfectQuery(AssistanceGame):
                 r += r_pizza
             elif s.meal == 3:
                 r += r_cake
-            elif s.meal in [0, 1]:
-                r -= 0.1
         return r if s.query == 0 else 0
 
     def make_feature_matrix(self):
