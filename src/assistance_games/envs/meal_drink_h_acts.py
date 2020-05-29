@@ -251,19 +251,21 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
             # meal
             if s.meal_timer == 0:
                 if (s.meal == 2 and prefer_pizza) or (s.meal == 3 and not prefer_pizza):
-                    r += 2
+                    r += 4
                 elif (s.meal == 2 and not prefer_pizza) or (s.meal == 3 and prefer_pizza):
-                    r += -1
+                    r += 1
             # drink
             if (s.drink == 1 and prefer_lemonade) or (s.drink == 2 and not prefer_lemonade):
-                r += 2
+                r += 4
             elif (s.drink == 1 and not prefer_lemonade) or (s.drink == 2 and prefer_lemonade):
-                r += -1
+                r += 1
 
         # query cost
         if s.query > 0:
             if s.h_away_timer > 0:
-                r += -3
+                r += -5
+            else:
+                r += -0.1
         return r
 
     def make_feature_matrix(self):
