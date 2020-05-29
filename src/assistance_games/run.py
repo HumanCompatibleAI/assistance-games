@@ -58,6 +58,8 @@ def run(
 ):
     if logging is not None:
         log_dir_base = './logs'
+        if not output_folder:
+            output_folder = env_name
         log_dir = os.path.join(log_dir_base, output_folder, f'seed{seed}')
     else:
         log_dir_base = None

@@ -407,7 +407,8 @@ def deep_rl_solve(
                       policy_kwargs=dict(n_lstm=32),
                       ent_coef=0.011,
                       n_steps=256,
-                      seed=seed)
+                      seed=seed,
+                      n_cpu_tf_sess=8)
     else:
         policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
     policy.learn(total_timesteps=total_timesteps)
