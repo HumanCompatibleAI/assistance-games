@@ -44,6 +44,8 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
 def get_hardcoded_policy(env, *args, **kwargs):
     if isinstance(env, envs.PieGridworldAssistanceProblem):
         return envs.get_pie_hardcoded_robot_policy(env, *args, **kwargs)
+    if isinstance(env, envs.SmallPieGridworldAssistanceProblem):
+        return envs.get_small_pie_hardcoded_robot_policy(env, *args, **kwargs)
     else:
         raise Error("No hardcoded robot policy for this environment.")
 
@@ -76,6 +78,7 @@ def run(
         'mealperfectquery' : envs.MealDrinkGridPerfectQueryProblem,
         'pie_mdp' : envs.PieMDPAssistanceProblem,
         'pie' : envs.PieGridworldAssistanceProblem,
+        'pie_small' : envs.SmallPieGridworldAssistanceProblem,
     }
     algos = {
         'exact' : exact_vi,

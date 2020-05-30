@@ -12,6 +12,7 @@ from assistance_games.core.models import (
     TabularForwardSensorModel,
     TabularRewardModel,
     TabularTransitionModel,
+    NoTerminationModel,
 )
 
 
@@ -190,3 +191,6 @@ def back_sensor_model_fn_builder(ag, human_policy_fn):
 
     sensor_model_fn = functools.partial(TabularBackwardSensorModel, back_sensor=back_sensor)
     return sensor_model_fn
+
+def no_termination_model_fn_builder(ag, human_policy_fn):
+    return NoTerminationModel

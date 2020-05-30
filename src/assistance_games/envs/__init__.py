@@ -3,6 +3,7 @@ from assistance_games.envs.meal_drink_grid import *
 from assistance_games.envs.meal_drink_h_acts import *
 from assistance_games.envs.meal_drink_reward_queries import *
 from assistance_games.envs.pie_gridworld import *
+from assistance_games.envs.pie_small_gridworld import *
 from assistance_games.envs.pie_mdp import *
 from assistance_games.envs.redblue import *
 from assistance_games.envs.small_pomdps import *
