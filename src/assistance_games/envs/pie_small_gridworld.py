@@ -62,7 +62,7 @@ class SmallPieGridworldAssistanceGame(AssistanceGame):
         discount = 0.99
 
         rewards_dist = {
-            ('A',) : (0, 2), # TODO: Eventually we want (1, 3) here
+            ('A',) : (0, 0), # TODO: Eventually we want (1, 3) here
             ('B',) : (0, 2),
             ('C',) : (0, 2)
         }
@@ -492,7 +492,7 @@ def small_pie_observation_model_fn_builder(ag):
     num_dims = ag.width + ag.height + 2 * num_ingredients + 1
     low = np.zeros(num_dims)
     high = np.ones(num_dims)
-    high[-1] = 3.0
+    high[-1] = max(map(max, ag.reward_distribution.values()))
 
     ob_space = Box(low=low, high=high)
 
