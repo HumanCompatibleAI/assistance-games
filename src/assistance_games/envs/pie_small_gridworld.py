@@ -415,7 +415,7 @@ def small_pie_reward_model_fn_builder(ag, human_policy_fn):
             return 0
 
         idx = [i for i, recipe in enumerate(recipes) if recipe == next_state['pie']][0]
-        return 10 if idx == next_state['preferred_idx'] else 1
+        return 10 if idx == next_state['preferred_idx'] else -1
 
     def is_subset(x, y):
         # TODO: Handle duplicates
