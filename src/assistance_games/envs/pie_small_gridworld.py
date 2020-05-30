@@ -12,38 +12,37 @@ from assistance_games.core import (
     functional_random_policy_fn,
     FunctionalObservationModel,
     FunctionalTransitionModel,
-    FunctionalRewardModel,
+    ShapedFunctionalRewardModel,
     SensorModel,
+    TerminationModel,
 )
 
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
-class PieGridworldAssistanceGame(AssistanceGame):
+class SmallPieGridworldAssistanceGame(AssistanceGame):
     def __init__(self):
         self.width = 5
-        self.height = 6
+        self.height = 3
 
         self.counter_items = {
-            (0, 2) : 'A',
-            (4, 5) : 'B',
-            (0, 4) : 'C',
-            (0, 5) : 'D',
-            (4, 1) : 'E',
-            (4, 2) : 'F',
-            (2, 5) : 'P',
+            (3, 0) : 'A',
+            (2, 0) : 'B',
+            (1, 0) : 'C',
+            (4, 1) : 'P',
         }
 
 
         self.recipes = [
-            ('A', 'A', 'B', 'B'),
-            ('A', 'B', 'C', 'E'),
-            ('A', 'B', 'D', 'F'),
+            ('A',),
+            ('B',),
+            ('C',)
         ]
 
-        human_action_space = Discrete(6)
-        robot_action_space = Discrete(6)
+        num_questions = len(self.recipes)
+        human_action_space = Box(0, 3, shape=())
+        robot_action_space = Discrete(6 + num_questions)
 
         self.INTERACT = 5
 
@@ -51,20 +50,22 @@ class PieGridworldAssistanceGame(AssistanceGame):
         self.initial_state = {
             'human_pos' : (0, 2),
             'human_hand' : '',
-            'robot_pos' : (4, 2),
+            'robot_pos' : (0, 0),
             'robot_hand' : '',
             'plate' : (),
+            'pie' : None,
+            'prev_h_action': 0,
+            'prev_r_action': 0,
         }
 
         horizon = 20
-        discount = 0.9
+        discount = 0.99
 
-        rewards_dist = []
-        num_recipes = len(self.recipes)
-        for idx in range(num_recipes):
-            reward_fn = partial(self.reward_fn, reward_idx=idx)
-            rewards_dist.append((reward_fn, 1/num_recipes))
-        
+        rewards_dist = {
+            ('A',) : (0, 2), # TODO: Eventually we want (1, 3) here
+            ('B',) : (0, 2),
+            ('C',) : (0, 2)
+        }
 
         super().__init__(
             state_space=state_space,
@@ -76,37 +77,39 @@ class PieGridworldAssistanceGame(AssistanceGame):
             discount=discount,
         )
 
-    def reward_fn(self, state, next_state=None, human_action=0, robot_action=0, reward_idx=0):
-        recipe_reward = int(state['plate'] == self.recipes[reward_idx])
-        return recipe_reward
-
     def transition_fn(self, state, human_action=0, robot_action=0):
         s = deepcopy(state)
 
-        s['human_pos'] = self.update_pos(state['human_pos'], human_action)
+        # s['human_pos'] = self.update_pos(state['human_pos'], human_action)
         s['robot_pos'] = self.update_pos(state['robot_pos'], robot_action)
 
-        s['human_hand'] = self.update_hand(state['human_pos'], state['human_hand'], human_action)
+        # s['human_hand'] = self.update_hand(state['human_pos'], state['human_hand'], human_action)
         s['robot_hand'] = self.update_hand(state['robot_pos'], state['robot_hand'], robot_action)
 
-        s['plate'] = self.update_plate(state['plate'], state['human_pos'], state['human_hand'], human_action)
+        # s['plate'] = self.update_plate(state['plate'], state['human_pos'], state['human_hand'], human_action)
         s['plate'] = self.update_plate(s['plate'], state['robot_pos'], state['robot_hand'], robot_action)
+
+        s['pie'] = self.update_pie(s['plate'], state['robot_pos'], state['robot_hand'], robot_action)
+
+        s['prev_h_action'] = human_action
+        s['prev_r_action'] = robot_action
 
         return s
 
 
     def update_pos(self, pos, act):
-        x, y = pos
         dirs = [
             (0, 0),
             (1, 0),
             (0, 1),
             (-1, 0),
             (0, -1),
-            (0, 0),
         ]
-        dx, dy = dirs[act]
+        if act >= len(dirs):
+            return pos
 
+        x, y = pos
+        dx, dy = dirs[act]
         new_x = np.clip(x + dx, 0, self.width - 1)
         new_y = np.clip(y + dy, 0, self.height - 1)
 
@@ -130,12 +133,17 @@ class PieGridworldAssistanceGame(AssistanceGame):
             return new_plate
         return plate
 
+    def update_pie(self, plate, pos, hand, action):
+        if hand == '' and action == self.INTERACT and self.counter_items.get(pos, '') == 'P' and plate in self.recipes:
+            return plate
+        return None
 
-class PieGridworldAssistanceProblem(AssistanceProblem):
+
+class SmallPieGridworldAssistanceProblem(AssistanceProblem):
     def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
-        assistance_game = PieGridworldAssistanceGame()
+        assistance_game = SmallPieGridworldAssistanceGame()
 
-        human_policy_fn = pie_human_policy_fn
+        human_policy_fn = small_pie_human_policy_fn
 
         self.ag = assistance_game
 
@@ -143,18 +151,19 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
             assistance_game=assistance_game,
             human_policy_fn=human_policy_fn,
 
-            state_space_builder=pie_state_space_builder,
-            transition_model_fn_builder=pie_transition_model_fn_builder,
-            reward_model_fn_builder=pie_reward_model_fn_builder,
-            sensor_model_fn_builder=pie_sensor_model_fn_builder,
-            observation_model_fn=pie_observation_model_fn_builder(assistance_game),
+            state_space_builder=small_pie_state_space_builder,
+            transition_model_fn_builder=small_pie_transition_model_fn_builder,
+            reward_model_fn_builder=small_pie_reward_model_fn_builder,
+            sensor_model_fn_builder=small_pie_sensor_model_fn_builder,
+            observation_model_fn=small_pie_observation_model_fn_builder(assistance_game),
+            termination_model_fn_builder=small_pie_termination_model_fn_builder,
         )
 
     def render(self, mode='human'):
         print(self.state)
 
         width = 5
-        height = 6
+        height = 3
 
         grid_side = 30
         gs = grid_side
@@ -172,18 +181,16 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
             return img, transform
 
         make_item_image = {
-            'A' : partial(make_image_transform, 'flour3.png'),
-            'B' : partial(make_image_transform, 'flour3.png', c=(0.1, 0.1, 0.1)),
-            'C' : partial(make_image_transform, 'apple3.png', c=(0.5, 0.7, 0.0)),
-            'D' : partial(make_image_transform, 'apple3.png', c=(0.7, 0.3, 0.2)),
-            'E' : partial(make_image_transform, 'chocolate2.png'),
-            'F' : partial(make_image_transform, 'chocolate2.png', c=(0.1, 0.1, 0.1)),
+            'A' : partial(make_image_transform, 'apple3.png', c=(0.7, 0.3, 0.2)),
+            'B' : partial(make_image_transform, 'apple3.png', c=(0.5, 0.7, 0.0)),
+            'C' : partial(make_image_transform, 'chocolate2.png'),
+            'F' : partial(make_image_transform, 'flour3.png'),
             'P' : partial(make_image_transform, 'plate1.png', w=1.3, h=1.3),
             '+' : partial(make_image_transform, 'plus1.png', w=0.5, h=0.5),
             '=' : partial(make_image_transform, 'equal1.png', w=0.5, h=0.2),
-            '0' : partial(make_image_transform, 'apple-pie1.png'),
+            '2' : partial(make_image_transform, 'apple-pie1.png'),
             '1' : partial(make_image_transform, 'apple-pie1.png', c=(0.5, 0.7, 0.0)),
-            '2' : partial(make_image_transform, 'apple-pie1.png', c=(0.7, 0.3, 0.2)),
+            '0' : partial(make_image_transform, 'apple-pie1.png', c=(0.7, 0.3, 0.2)),
         }
 
         def move_to_counter(pos):
@@ -317,10 +324,11 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
 
         human_pos = self.state['human_pos']
         robot_pos = self.state['robot_pos']
-        human_hand = self.state['human_hand']
+        # human_hand = self.state['human_hand']
         robot_hand = self.state['robot_hand']
         plate = self.state['plate']
-        reward_idx = self.state['reward_idx']
+        pie = self.state['pie']
+        preferred_idx = self.state['preferred_idx']
 
         human_coords = self.grid.coords_from_pos(human_pos)
         self.human_transform.set_translation(*human_coords)
@@ -332,7 +340,7 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
         ### Render hand content
 
         for hand, hand_transform in (
-            (human_hand, self.human_transform),
+            # (human_hand, self.human_transform),
             (robot_hand, self.robot_transform),
         ):
             if hand != '':
@@ -348,17 +356,15 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
 
         ### Render plate content
 
-        recipe_made = False
-        for idx, recipe in enumerate(self.ag.recipes):
-            if plate == recipe:
-                pie, transform = make_item_image[str(idx)](s=0.65)
-                transform.set_translation(*plate_coords)
-                self.viewer.add_onetime(pie)
-                recipe_made = True
-                break
-
-
-        if not recipe_made:
+        if pie is not None:
+            for idx, recipe in enumerate(self.ag.recipes):
+                if pie == recipe:
+                    pie, transform = make_item_image[str(idx)](s=0.65)
+                    transform.set_translation(*plate_coords)
+                    self.viewer.add_onetime(pie)
+                    recipe_made = True
+                    break
+        else:
             for j, item_name in enumerate(plate):
                 item, transform = make_item_image[item_name](s=0.4)
 
@@ -372,45 +378,80 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
 
 
         ### Render pie in thought bubble
-        self.viewer.add_onetime(self.pies[reward_idx])
+        self.viewer.add_onetime(self.pies[preferred_idx])
 
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
 
 
-class PieGridworldProblemStateSpace:
+class SmallPieGridworldProblemStateSpace:
     def __init__(self, ag):
         self.initial_state = ag.initial_state
-        self.num_rewards = len(ag.reward_distribution)
+        self.thetas_dists = [ag.reward_distribution[recipe] for recipe in ag.recipes]
 
     def sample_initial_state(self):
         state = deepcopy(self.initial_state)
-        state['reward_idx'] = np.random.randint(self.num_rewards)
+        thetas = [np.random.uniform(low, high) for low, high in self.thetas_dists]
+        state['thetas'] = thetas
+        state['preferred_idx'] = max(range(len(thetas)), key=lambda i: thetas[i]) # argmax
         return state
 
-def pie_state_space_builder(ag):
-    return PieGridworldProblemStateSpace(ag)
+def small_pie_state_space_builder(ag):
+    return SmallPieGridworldProblemStateSpace(ag)
 
-def pie_transition_model_fn_builder(ag, human_policy_fn):
+def small_pie_transition_model_fn_builder(ag, human_policy_fn):
     def transition_fn(state, action):
-        human_policy = human_policy_fn(ag, state['reward_idx'])
+        human_policy = human_policy_fn(ag, state['thetas'])
         return ag.transition(state, human_policy(state), action)
 
     transition_model_fn = partial(FunctionalTransitionModel, fn=transition_fn)
     return transition_model_fn
 
-def pie_reward_model_fn_builder(ag, human_policy_fn):
+def small_pie_reward_model_fn_builder(ag, human_policy_fn):
+    recipes = ag.recipes
+    
     def reward_fn(state, action=None, next_state=None):
-        reward = ag.reward_distribution[state['reward_idx']][0]
-        return reward(state=state, next_state=next_state)
+        if next_state['pie'] is None:
+            return 0
 
-    reward_model_fn = partial(FunctionalRewardModel, fn=reward_fn)
+        idx = [i for i, recipe in enumerate(recipes) if recipe == next_state['pie']][0]
+        return 10 if idx == next_state['preferred_idx'] else 1
+
+    def is_subset(x, y):
+        # TODO: Handle duplicates
+        return all(a in y for a in x)
+    
+    def shaping_fn(state):
+        total = 0.0
+        hand = state['robot_hand']
+        plate = state['plate']
+        preferred_idx = state['preferred_idx']
+        # TODO: Should check whether the item in hand is actually useful (e.g. not already on the plate, contributes to some recipe)
+        if hand == '':
+            pass
+        elif hand in recipes[preferred_idx]:
+            total += 1.0
+        else:
+            total += 0.1
+
+        if plate == '':
+            pass
+        elif is_subset(plate, recipes[preferred_idx]):
+            total += 2.0 * len(plate)
+        else:
+            # TODO: Should check that the plate corresponds to some possible recipe
+            total += 0.2 * len(plate)
+
+        return total
+
+    # To disable reward shaping, simply pass in shaping_fns=[]
+    reward_model_fn = partial(ShapedFunctionalRewardModel, fn=reward_fn, shaping_fns=[shaping_fn])
     return reward_model_fn
 
-def pie_sensor_model_fn_builder(ag, human_policy_fn):
+def small_pie_sensor_model_fn_builder(ag, human_policy_fn):
     return SensorModel
 
-def pie_observation_model_fn_builder(ag):
+def small_pie_observation_model_fn_builder(ag):
     num_ingredients = len(ag.counter_items) - 1
 
     def observation_fn(state, action=None, sense=None):
@@ -440,16 +481,18 @@ def pie_observation_model_fn_builder(ag):
             return ob
 
         return np.concatenate([
-            position_ob(state['human_pos']),
+            # position_ob(state['human_pos']),
             position_ob(state['robot_pos']),
-            hand_ob(state['human_hand']),
+            # hand_ob(state['human_hand']),
             hand_ob(state['robot_hand']),
             plate_ob(state['plate']),
+            np.array([state['prev_h_action']]),
         ])
 
-    num_dims = 2 * (ag.width + ag.height) + 3 * num_ingredients
+    num_dims = ag.width + ag.height + 2 * num_ingredients + 1
     low = np.zeros(num_dims)
     high = np.ones(num_dims)
+    high[-1] = 3.0
 
     ob_space = Box(low=low, high=high)
 
@@ -457,217 +500,30 @@ def pie_observation_model_fn_builder(ag):
     return observation_model_fn
 
 
-def get_pie_hardcoded_robot_policy(*args, **kwargs):
+class SmallPieTerminationModel(TerminationModel):
+    def __call__(self):
+        return self.pomdp.state['pie'] != None
+
+def small_pie_termination_model_fn_builder(ag, human_policy):
+    return SmallPieTerminationModel
+
+
+def small_pie_human_policy_fn(ag, thetas):
+    def human_policy(state):
+        question = state['prev_r_action'] - 6
+        return thetas[question] if question >= 0 else 0
+    return human_policy
+
+
+def get_small_pie_hardcoded_robot_policy(*args, **kwargs):
     class Policy:
+        def __init__(self):
+            S, R, U, L, D, A, QA, QB, QC = range(9)
+            self.actions = [R, A, R, R, R, U, A, A]
+
         def predict(self, ob, state=None):
-            t, r_idx = state if state is not None else (0, None)
-
-            width = 5
-            height = 6
-
-            onehot_x = ob[:width]
-            onehot_y = ob[width:width+height]
-
-            x = np.argmax(onehot_x)
-            y = np.argmax(onehot_y)
-            human_pos = (x, y)
-
-
-            if t == 1:
-                if human_pos == (0, 2):
-                    r_idx = 0
-                else:
-                    r_idx = 3
-
-            if r_idx == 3:
-                if t == 3 and human_pos == (0, 4):
-                    r_idx = 1
-
-                if t == 3 and human_pos == (0, 5):
-                    r_idx = 2
-
-
-
-            S, R, U, L, D, A = range(6)
-
-
-            robot_policies = [
-                [
-                    S,          # Wait 1 step
-                    U, U, U, A, # Get dark flour
-                    L, L, A,    # Take to plate
-                    R, R, A,    # Get dark flour
-                    L, L, A,    # Take to plate
-                ],
-
-                [
-                    S, S, S,             # Wait 1 step
-                    D, A,                # get milk chocolate
-                    U, U, U, U, L, L, A, # drop in plate
-                    R, R, A,             # get dark flour
-                    L, L, A,             # Take to plate
-                ],
-
-                [
-                    S, S, S,                # Wait 1 step
-                    A,                      # get milk chocolate
-                    U, U, U, L, L, A, # drop in plate
-                    R, R, A,                # get dark flour
-                    L, L, A,                # Take to plate
-                ],
-            ]
-
-            if r_idx is None:
-                robot_policy = robot_policies[0]
-            elif r_idx == 3:
-                robot_policy = robot_policies[1]
-            else:
-                robot_policy = robot_policies[r_idx]
-
-
-            act = robot_policy[t] if t < len(robot_policy) else S
-
-            return act, (t+1, r_idx)
+            if not self.actions:
+                return 0, None
+            return self.actions.pop(0), None
 
     return Policy()
-
-
-def pie_human_policy_fn(ag, reward):
-    def human_policy(state):
-        S, R, U, L, D, A = range(6)
-
-        # policy 0
-
-        policy0 = [
-            A,                # get white flour
-            U, U, U, R, R, A, # take to plate
-            L, L, D, D, D, A, # get white flour
-            U, U, U, R, R, A, # take to plate
-            S,
-        ]
-
-        trail0 = [
-            ((0, 2), '', {'A' : 0}),
-
-            ((0, 2), 'A', {'A' : 0}),
-            ((0, 3), 'A', {'A' : 0}),
-            ((0, 4), 'A', {'A' : 0}),
-            ((0, 5), 'A', {'A' : 0}),
-            ((1, 5), 'A', {'A' : 0}),
-            ((2, 5), 'A', {'A' : 0}),
-
-            ((2, 5), '', {'A' : 1}),
-            ((1, 5), '', {'A' : 1}),
-            ((0, 5), '', {'A' : 1}),
-            ((0, 4), '', {'A' : 1}),
-            ((0, 3), '', {'A' : 1}),
-            ((0, 2), '', {'A' : 1}),
-
-            ((0, 2), 'A', {'A' : 1}),
-            ((0, 3), 'A', {'A' : 1}),
-            ((0, 4), 'A', {'A' : 1}),
-            ((0, 5), 'A', {'A' : 1}),
-            ((1, 5), 'A', {'A' : 1}),
-            ((2, 5), 'A', {'A' : 1}),
-
-            ((2, 5), '', {'A' : 2}),
-        ]
-
-
-        policy1 = [
-            U, U, A, # get green apple
-            U, R, R, A, # drop in plate
-            L, L, D, D, D, A, # get white flour
-            U, U, U, R, R, A, # take to plate
-            S,
-        ]
-
-        trail1 = [
-            ((0, 2), '',  {'C' : 0}),
-            ((0, 3), '',  {'C' : 0}),
-            ((0, 4), '',  {'C' : 0}),
-            ((0, 4), 'C', {'C' : 0}),
-            ((0, 5), 'C', {'C' : 0}),
-            ((1, 5), 'C', {'C' : 0}),
-            ((2, 5), 'C', {'C' : 0}),
-
-            ((2, 5), '', {'A' : 0, 'C' : 1}),
-            ((1, 5), '', {'C' : 1}),
-            ((0, 5), '', {'C' : 1}),
-            ((0, 4), '', {'C' : 1}),
-            ((0, 3), '', {'C' : 1}),
-            ((0, 2), '', {'C' : 1}),
-
-            ((0, 2), 'A', {'C' : 1}),
-            ((0, 3), 'A', {'C' : 1}),
-            ((0, 4), 'A', {'C' : 1}),
-            ((0, 5), 'A', {'C' : 1}),
-            ((1, 5), 'A', {'C' : 1}),
-            ((2, 5), 'A', {'C' : 1}),
-
-            ((2, 5), '', {'A' : 1, 'C' : 1}),
-        ]
-
-
-
-        policy2 = [
-            U, U, U, A, # get red apple
-            R, R, A, # drop in plate
-            L, L, D, D, D, A, # get white flour
-            U, U, U, R, R, A, # take to plate
-            S,
-        ]
-
-        trail2 = [
-            ((0, 2), '',  {'A' : 0, 'D' : 0}),
-            ((0, 3), '',  {'A' : 0, 'D' : 0}),
-            ((0, 4), '',  {'A' : 0, 'D' : 0}),
-            ((0, 5), '',  {'A' : 0, 'D' : 0}),
-            ((0, 5), 'D', {'A' : 0, 'D' : 0}),
-            ((1, 5), 'D', {'A' : 0, 'D' : 0}),
-            ((2, 5), 'D', {'A' : 0, 'D' : 0}),
-
-            ((2, 5), '', {'A' : 0, 'D' : 1}),
-            ((1, 5), '', {'D' : 1}),
-            ((0, 5), '', {'D' : 1}),
-            ((0, 4), '', {'D' : 1}),
-            ((0, 3), '', {'D' : 1}),
-            ((0, 2), '', {'D' : 1}),
-
-            ((0, 2), 'A', {'D' : 1}),
-            ((0, 3), 'A', {'D' : 1}),
-            ((0, 4), 'A', {'D' : 1}),
-            ((0, 5), 'A', {'D' : 1}),
-            ((1, 5), 'A', {'D' : 1}),
-            ((2, 5), 'A', {'D' : 1}),
-
-            ((2, 5), '', {'A' : 1, 'D' : 1}),
-        ]
-
-
-        reward_idx = state['reward_idx']
-
-        policy = (policy0, policy1, policy2)[reward_idx]
-        trail = (trail0, trail1, trail2)[reward_idx]
-
-
-        def has_plate_condition(plate, cond):
-            c = Counter(plate)
-            return all(c[k] == v for k, v in cond.items())
-
-
-        def get_time(state):
-            for t, (pos, hand, plate_cond) in enumerate(trail):
-                if (
-                    pos == state['human_pos'] and
-                    hand == state['human_hand'] and
-                    has_plate_condition(state['plate'], plate_cond)
-                ):
-                    return t
-
-        t = get_time(state)
-        action = policy[t] if t is not None else A
-
-        return action
-
-    return human_policy

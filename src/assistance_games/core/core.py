@@ -16,6 +16,7 @@ from assistance_games.core.builders import (
     discrete_reward_model_fn_builder,
     discrete_state_space_builder,
     tabular_transition_model_fn_builder,
+    no_termination_model_fn_builder,
 )
 
 from assistance_games.core.models import (
@@ -68,18 +69,18 @@ class POMDP(gym.Env):
         self.t += 1
 
         # Update sensor
-        sense = self.sensor_model()
+        self.sense = self.sensor_model()
 
         # Update observation
-        ob = self.observation_model()
-
-        # Compute reward
-        reward = self.reward_model()
+        self.ob = self.observation_model()
 
         # Check termination
-        done = self.termination_model() or self.t >= self.horizon
+        self.done = self.termination_model() or self.t >= self.horizon
 
-        return ob, reward, done, self.info
+        # Compute reward
+        self.reward = self.reward_model()
+
+        return self.ob, self.reward, self.done, self.info
 
     @property
     def observation_space(self):
@@ -120,6 +121,7 @@ class AssistanceProblem(POMDP):
         reward_model_fn_builder=discrete_reward_model_fn_builder,
         sensor_model_fn_builder=back_sensor_model_fn_builder,
         observation_model_fn=BeliefObservationModel,
+        termination_model_fn_builder=no_termination_model_fn_builder,
     ):
         """
         Parameters
@@ -140,4 +142,5 @@ class AssistanceProblem(POMDP):
             reward_model_fn=reward_model_fn_builder(ag, human_policy_fn),
             sensor_model_fn=sensor_model_fn_builder(ag, human_policy_fn),
             observation_model_fn=observation_model_fn,
+            termination_model_fn=termination_model_fn_builder(ag, human_policy_fn)
         )
