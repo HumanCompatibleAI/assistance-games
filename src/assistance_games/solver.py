@@ -48,7 +48,7 @@ def pomdp_value_iteration(
     expand_beliefs_fn,
     value_backup_fn,
     max_iter=3,
-    num_beliefs=30,
+    num_beliefs=20,
     max_value_iter=30,
     limit_belief_expansion=True,
     **kwargs,
@@ -58,14 +58,22 @@ def pomdp_value_iteration(
     Implements different exact or approximate solvers, differing on how
     beliefs are selected (if any), and how alpha values are updated.
     """
-    num_value_iter = min(max_value_iter, get_effective_horizon(pomdp))
-    nS = pomdp.state_space.n
+    horizon = get_effective_horizon(pomdp)
+
+    k = 2
+    num_belief_iter = k * horizon
+    num_value_iter = horizon
+
+    num_belief_iter = 20
+    num_value_iter = 2
 
     beliefs = None
+    nS = pomdp.state_space.n
     alphas = [Alpha(np.zeros(nS), None)]
-    for _ in range(max_iter):
+
+    for it in range(num_belief_iter):
         beliefs = expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
-        for _ in range(num_value_iter):
+        for v_it in range(num_value_iter):
             alphas = value_backup_fn(pomdp, alphas, beliefs)
 
     return POMDPPolicy(alphas)
@@ -92,7 +100,11 @@ def none_expand_beliefs_fn(*args, **kwargs):
 
 def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_expansion=True):
     if beliefs is None:
-        return sample_random_beliefs(pomdp, num_beliefs)
+        initial_belief = pomdp.state_space.distribution().copy()
+        beliefs = [initial_belief]
+        random_beliefs = sample_random_beliefs(pomdp, num_beliefs)
+        beliefs.extend(random_beliefs)
+        return beliefs
     else:
         max_new_beliefs = num_beliefs if limit_belief_expansion else None
         return density_expand_beliefs(pomdp, beliefs, max_new_beliefs)
@@ -112,7 +124,7 @@ def sample_random_beliefs(pomdp, num_beliefs):
     beliefs = np.concatenate([beliefs, unif], axis=0)
     return beliefs
 
-def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
+def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-1):
     """Expand belief set by sampling next beliefs.
 
     For each belief, samples a next belief for each action,
@@ -400,17 +412,25 @@ def deep_rl_solve(
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
 
     if use_lstm:
-        policy = PPO2(MlpLstmPolicy,
-                      pomdp,
-                      learning_rate=learning_rate,
-                      nminibatches=1,
-                      policy_kwargs=dict(n_lstm=32),
-                      ent_coef=0.011,
-                      n_steps=256,
-                      seed=seed,
-                      tensorboard_log=log_dir)
+        policy = PPO2(
+            MlpLstmPolicy,
+            pomdp,
+            learning_rate=learning_rate,
+            nminibatches=1,
+            policy_kwargs=dict(n_lstm=32),
+            ent_coef=0.011,
+            n_steps=256,
+            seed=seed,
+            tensorboard_log=log_dir,
+        )
     else:
-        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
+        policy = PPO2(
+            MlpPolicy,
+            pomdp,
+            learning_rate=learning_rate,
+            seed=seed,
+            tensorboard_log=log_dir,
+        )
     policy.learn(total_timesteps=total_timesteps)
     return policy
 

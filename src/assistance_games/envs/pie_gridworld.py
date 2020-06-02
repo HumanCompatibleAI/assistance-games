@@ -57,7 +57,7 @@ class PieGridworldAssistanceGame(AssistanceGame):
         }
 
         horizon = 20
-        discount = 0.9
+        discount = 0.95
 
         rewards_dist = []
         num_recipes = len(self.recipes)
@@ -153,8 +153,8 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
     def render(self, mode='human'):
         print(self.state)
 
-        width = 5
-        height = 6
+        width = self.ag.width
+        height = self.ag.height
 
         grid_side = 30
         gs = grid_side
@@ -172,17 +172,17 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
             return img, transform
 
         make_item_image = {
-            'A' : partial(make_image_transform, 'flour3.png'),
-            'B' : partial(make_image_transform, 'flour3.png', c=(0.1, 0.1, 0.1)),
-            'C' : partial(make_image_transform, 'apple3.png', c=(0.5, 0.7, 0.0)),
-            'D' : partial(make_image_transform, 'apple3.png', c=(0.7, 0.3, 0.2)),
-            'E' : partial(make_image_transform, 'chocolate2.png'),
-            'F' : partial(make_image_transform, 'chocolate2.png', c=(0.1, 0.1, 0.1)),
+            'A' : partial(make_image_transform, 'flour4.png'),
+            'B' : partial(make_image_transform, 'sugar6.png', w=1.2, h=1.2),
+            'C' : partial(make_image_transform, 'chocolate4.png'),
+            'D' : partial(make_image_transform, 'chocolate4.png', c=(0.1, 0.1, 0.1)),
+            'E' : partial(make_image_transform, 'cherry1.png'),
+            'F' : partial(make_image_transform, 'apple3.png', c=(0.7, 0.3, 0.2)),
             'P' : partial(make_image_transform, 'plate1.png', w=1.3, h=1.3),
             '+' : partial(make_image_transform, 'plus1.png', w=0.5, h=0.5),
             '=' : partial(make_image_transform, 'equal1.png', w=0.5, h=0.2),
-            '0' : partial(make_image_transform, 'apple-pie1.png'),
-            '1' : partial(make_image_transform, 'apple-pie1.png', c=(0.5, 0.7, 0.0)),
+            '0' : partial(make_image_transform, 'pie1.png'),
+            '1' : partial(make_image_transform, 'cake1.png'),
             '2' : partial(make_image_transform, 'apple-pie1.png', c=(0.7, 0.3, 0.2)),
         }
 
@@ -199,25 +199,33 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
             else:
                 return (x, y)
 
+        g_x0 = -110 + grid_side
+        g_y0 = -110 + grid_side
+
+        make_rect = lambda x, y, w, h : rendering.make_polygon([(x,y),(x+w,y),(x+w,y+h),(x,y+h)])
+
+        make_grid_rect = lambda i, j, di, dj : make_rect(g_x0 + i*gs, g_y0 + j*gs, di*gs, dj*gs)
+
 
         if self.viewer is None:
             self.viewer = rendering.Viewer(500,800)
             self.viewer.set_bounds(-130, 120, -150, 250)
 
-            g_x0 = -110 + grid_side
-            g_y0 = -110 + grid_side
+            grid_background = make_grid_rect(0, 0, width, height)
+            grid_background.set_color(0.92, 0.92, 0.92)
+            self.viewer.add_geom(grid_background)
 
             self.grid = rendering.Grid(start=(g_x0, g_y0), grid_side=grid_side, shape=(width, height))
             self.grid.set_color(0.85, 0.85, 0.85)
             self.viewer.add_geom(self.grid)
 
-            human_image = get_asset('images/girl1.png')
+            human_image = get_asset('images/girl9-red2.png')
             human = rendering.Image(human_image, grid_side, grid_side)
             self.human_transform = rendering.Transform()
             human.add_attr(self.human_transform)
             self.viewer.add_geom(human)
 
-            robot_image = get_asset('images/robot1.png')
+            robot_image = get_asset('images/robot10.png')
             robot = rendering.Image(robot_image, grid_side, grid_side)
             self.robot_transform = rendering.Transform()
             robot.add_attr(self.robot_transform)
@@ -225,10 +233,6 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
 
 
             ### Render counters
-
-            make_rect = lambda x, y, w, h : rendering.make_polygon([(x,y),(x+w,y),(x+w,y+h),(x,y+h)])
-
-            make_grid_rect = lambda i, j, di, dj : make_rect(g_x0 + i*gs, g_y0 + j*gs, di*gs, dj*gs)
 
             counters = [
                 make_grid_rect(-1, -1, width+2, 1),
@@ -261,7 +265,7 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
             g_y0 = -110 + grid_side
             header_x = g_x0 + 0 * grid_side
             header_y = g_y0 + (height + 2) * grid_side
-            hl = 15
+            hl = 18
 
             header_transform = rendering.Transform()
             header_transform.set_translation(header_x, header_y)
@@ -269,7 +273,7 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
             for i, recipe in enumerate(self.ag.recipes):
                 formula = '+'.join(recipe) + f'={i}'
                 for j, c in enumerate(formula):
-                    img, tr = make_item_image[c](s=0.5)
+                    img, tr = make_item_image[c](s=0.6)
                     img.add_attr(header_transform)
                     tr.set_translation(hl*j, 1.2*hl*i)
                     self.viewer.add_geom(img)
@@ -447,7 +451,8 @@ def pie_observation_model_fn_builder(ag):
             plate_ob(state['plate']),
         ])
 
-    num_dims = 4 + 3 * num_ingredients
+    pos_ob_dims = ag.width + ag.height
+    num_dims = 2 * pos_ob_dims + 3 * num_ingredients
     low = np.zeros(num_dims)
     high = np.ones(num_dims)
     high[:4] = [ag.width, ag.height, ag.width, ag.height]

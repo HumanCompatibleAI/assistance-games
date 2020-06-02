@@ -14,7 +14,10 @@ from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
 
-def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
+def run_environment(env, policy=None, n_episodes=None, dt=0.01, max_steps=100, render=True):
+    if n_episodes is None:
+        n_episodes = int(1e30)
+
     def render_fn():
         if render:
             env.render(mode='human')
@@ -28,6 +31,7 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
         state = None
         done = False
         step = 0
+        total_re = 0
         while not done and step < max_steps:
             if policy is None:
                 ac = env.action_space.sample()
@@ -36,14 +40,21 @@ def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, ren
             old_ob = ob
             ob, re, done, _ = env.step(ac)
             print('r = {}'.format(re))
-            render_fn()
+            total_re += re
             step += 1
+            print(step)
+            render_fn()
+        print(f'total_re: {total_re}')
     return None
 
 
 def get_hardcoded_policy(env, *args, **kwargs):
     if isinstance(env, envs.PieGridworldAssistanceProblem):
         return envs.get_pie_hardcoded_robot_policy(env, *args, **kwargs)
+    if isinstance(env, envs.SmallPieGridworldAssistanceProblem):
+        return envs.get_smallpie_hardcoded_robot_policy(env, *args, **kwargs)
+    if isinstance(env, envs.MiniPieGridworldAssistanceProblem):
+        return envs.get_minipie_hardcoded_robot_policy(env, *args, **kwargs)
     else:
         raise Error("No hardcoded robot policy for this environment.")
 
@@ -74,11 +85,15 @@ def run(
         'mealperfectquery' : envs.MealDrinkGridPerfectQueryProblem,
         'pie_mdp' : envs.PieMDPAssistanceProblem,
         'pie' : envs.PieGridworldAssistanceProblem,
+        'small_pie' : envs.SmallPieGridworldAssistanceProblem,
+        'mini_pie' : envs.MiniPieGridworldAssistanceProblem,
     }
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
         'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
+        'lstm-ppo' : partial(deep_rl_solve, log_dir=log_dir_base),
+        'ppo' : partial(deep_rl_solve, log_dir=log_dir_base, use_lstm=False),
         'random' : lambda *args, **kwargs : None,
         'hardcoded' : get_hardcoded_policy,
     }
@@ -104,7 +119,7 @@ def run(
     print('\n seed {}'.format(seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, policy, dt=0.5, n_episodes=10, render=render)
+    run_environment(env, policy, dt=0.5, n_episodes=None, render=render)
 
 
 def main():

@@ -263,7 +263,6 @@ class FunctionalRewardModel(RewardModel):
         state = self.pomdp.state
         return self.fn(prev_state, action, state)
 
-
 ### Termination models
 
 class TerminationModel:

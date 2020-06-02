@@ -76,3 +76,17 @@ def soft_value_iteration(T, R, discount=0.9, num_iter=30, beta=1e8, **kwargs):
     policy /= policy.sum(axis=1, keepdims=True)
 
     return policy
+
+def softhard_value_iteration(T, R, discount=0.9, num_iter=30, beta=1e8, **kwargs):
+    nS, nA, _ = T.shape
+    Q = np.empty((nS, nA))
+    V = np.zeros((nS,))
+
+    for _ in range(num_iter):
+        Q = R + discount * np.tensordot(T, V, axes=(2, 0))
+        V = np.max(Q, axis=1)
+
+    policy = np.exp(beta * (Q - V[:, None]))
+    policy /= policy.sum(axis=1, keepdims=True)
+
+    return policy
