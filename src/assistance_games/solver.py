@@ -408,7 +408,7 @@ def deep_rl_solve(
                       ent_coef=0.011,
                       n_steps=256,
                       seed=seed,
-                      tensorboard_log=log_dir)
+                      n_cpu_tf_sess=8)
     else:
         policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
     policy.learn(total_timesteps=total_timesteps)
