@@ -14,13 +14,16 @@ from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
 
-def run_environment(env, policy=None, n_episodes=10, dt=0.01, max_steps=100, render=True):
+def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
+    if num_episodes == -1:
+        num_episodes = int(1e6)
+
     def render_fn():
         if render:
             env.render(mode='human')
             time.sleep(dt)
 
-    for ep in range(n_episodes):
+    for ep in range(num_episodes):
         print('\n starting ep {}'.format(ep))
         ob = env.reset()
         render_fn()
@@ -56,6 +59,7 @@ def run(
     logging=True,
     output_folder='',
     render=True,
+    num_episodes=10,
     **kwargs,
 ):
     if logging is not None:
@@ -109,7 +113,7 @@ def run(
     print('\n seed {}'.format(seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, policy, dt=0.5, n_episodes=10, render=render)
+    run_environment(env, policy, dt=0.5, num_episodes=num_episodes, render=render)
 
 
 def main():
@@ -120,21 +124,26 @@ def main():
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
     parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
+    parser.add_argument('-m', '--num_runs', type=int, default=1)
+    parser.add_argument('-p', '--num_episodes', type=int, default=10)
     parser.add_argument('-r', '--render', default=True, action='store_true')
     parser.add_argument('-nr', '--no_render', dest='render', action='store_false')
     parser.add_argument('-l', '--logging', default=True, action='store_true')
     parser.add_argument('-nl', '--no_logging', dest='logging', action='store_false')
     args = parser.parse_args()
 
-    run(
-        env_name=args.env_name,
-        algo_name=args.algo_name,
-        seed=args.seed,
-        logging=args.logging,
-        output_folder=args.output_folder,
-        total_timesteps=args.total_timesteps,
-        render=args.render,
-    )
+    for run_id in range(args.num_runs):
+        seed = args.seed + run_id
+        run(
+            env_name=args.env_name,
+            algo_name=args.algo_name,
+            seed=seed,
+            logging=args.logging,
+            output_folder=args.output_folder,
+            total_timesteps=args.total_timesteps,
+            render=args.render,
+            num_episodes=args.num_episodes,
+        )
 
 
 if __name__ == '__main__':
