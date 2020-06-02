@@ -9,7 +9,7 @@ import time
 import numpy as np
 
 from assistance_games.parser import read_pomdp
-from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
+from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, dqn, get_venv
 from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
@@ -94,6 +94,7 @@ def run(
         'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
         'lstm-ppo' : partial(deep_rl_solve, log_dir=log_dir_base),
         'ppo' : partial(deep_rl_solve, log_dir=log_dir_base, use_lstm=False),
+        'dqn' : partial(dqn, log_dir=log_dir_base),
         'random' : lambda *args, **kwargs : None,
         'hardcoded' : get_hardcoded_policy,
     }
@@ -119,7 +120,7 @@ def run(
     print('\n seed {}'.format(seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, policy, dt=0.5, n_episodes=None, render=render)
+    run_environment(env, policy, dt=0.3, n_episodes=None, render=render)
 
 
 def main():

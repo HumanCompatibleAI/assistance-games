@@ -47,9 +47,9 @@ def pomdp_value_iteration(
     *,
     expand_beliefs_fn,
     value_backup_fn,
-    max_iter=3,
     num_beliefs=20,
-    max_value_iter=30,
+    num_belief_iter=3,
+    num_value_iter=None,
     limit_belief_expansion=True,
     **kwargs,
 ):
@@ -399,6 +399,25 @@ exact_vi = functools.partial(
     value_backup_fn=exact_value_backup,
 )
 
+def dqn(
+    pomdp,
+    total_timesteps=1000000,
+    learning_rate=1e-4,
+    seed=0,
+    log_dir=None,
+):
+    from stable_baselines.deepq.policies import MlpPolicy
+    from stable_baselines import DQN
+
+    policy = DQN(
+        MlpPolicy,
+        pomdp,
+        learning_rate=learning_rate,
+        seed=seed,
+        tensorboard_log=log_dir,
+    )
+    policy.learn(total_timesteps=total_timesteps)
+    return policy
 
 def deep_rl_solve(
     pomdp,

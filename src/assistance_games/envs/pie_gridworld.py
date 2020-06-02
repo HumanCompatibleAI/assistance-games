@@ -56,6 +56,8 @@ class PieGridworldAssistanceGame(AssistanceGame):
             'plate' : (),
         }
 
+        self.extra_counters = []
+
         horizon = 20
         discount = 0.95
 
@@ -132,11 +134,16 @@ class PieGridworldAssistanceGame(AssistanceGame):
 
 
 class PieGridworldAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
-        assistance_game = PieGridworldAssistanceGame()
+    def __init__(
+        self,
+        assistance_game_cls=PieGridworldAssistanceGame,
+        human_policy_fn=None,
+        **kwargs,
+    ):
+        if human_policy_fn is None:
+            human_policy_fn=pie_human_policy_fn
 
-        human_policy_fn = pie_human_policy_fn
-
+        assistance_game = assistance_game_cls()
         self.ag = assistance_game
 
         super().__init__(
@@ -677,3 +684,84 @@ def pie_human_policy_fn(ag, reward):
         return action
 
     return human_policy
+
+
+
+
+
+class MiniPieGridworld2AssistanceGame(AssistanceGame):
+    def __init__(self):
+        super().__init__()
+
+        self.width = 3
+        self.height = 4
+
+        self.num_pos = 9
+
+        self.counter_items = {
+            (0, 2) : 'A',
+            (2, 3) : 'B',
+            (0, 3) : 'C',
+            (2, 0) : 'D',
+            (self.width//2, self.height-1) : 'P',
+        }
+        self.item_to_counter = {name : pos for pos, name in self.counter_items.items()}
+
+        self.recipes = [
+            ('A', 'B'),
+            ('A', 'B', 'C', 'D'),
+        ]
+
+        self.INTERACT = 2
+
+        self.initial_state = {
+            'human_pos' : 1,
+            'human_hand' : '',
+            'robot_pos' : 8,
+            'robot_hand' : '',
+            'plate' : (),
+            'recipe_made' : False,
+        }
+
+        self.extra_counters = [
+            (1, 0, 1, 3),
+        ]
+
+        self.map_to_grid = [
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+
+            (1, 3),
+
+            (2, 3),
+            (2, 2),
+            (2, 1),
+            (2, 0),
+        ]
+        self.map_from_grid = {pos2d : pos1d for pos1d, pos2d in enumerate(self.map_to_grid)}
+
+
+    def update_pos(self, pos, act):
+        dirs = [
+            1,
+            -1,
+            0,
+        ]
+        d = dirs[act]
+
+        pos1d = self.map_from_grid[pos]
+        new_pos1d = np.clip(pos1d + d, 0, self.num_pos - 1)
+        new_pos2d = self.map_to_grid[new_pos1d]
+
+        return new_pos2d
+
+
+class MiniPieGridworld2AssistanceProblem(PieGridworldAssistanceProblem):
+    def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
+        super().__init__(
+            assistance_game_cls=MiniPieGridworld2AssistanceGame,
+            human_policy_fn=minipie_human_policy_fn,
+        )
+

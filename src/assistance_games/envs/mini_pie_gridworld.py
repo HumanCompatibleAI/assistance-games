@@ -48,13 +48,6 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
             # ('A', 'B', 'D', 'F'),
         ]
 
-        add_null_reward = True
-        add_null_reward = False
-
-        if add_null_reward:
-            self.recipes.append(('X',))
-
-
         human_action_space = Discrete(3)
         robot_action_space = Discrete(3)
 
@@ -68,9 +61,10 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
             'robot_hand' : '',
             'plate' : (),
             'recipe_made' : False,
+            'time' : 0,
         }
 
-        horizon = 20
+        self.horizon = 20
         discount = 0.95
 
 
@@ -102,66 +96,18 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
             robot_action_space=robot_action_space,
             transition=self.transition_fn,
             reward_distribution=rewards_dist,
-            horizon=horizon,
+            horizon=self.horizon,
             discount=discount,
         )
 
-    def reward_fn1(self, state, next_state=None, human_action=0, robot_action=0, reward_idx=0):
+    def reward_fn(self, state, next_state=None, human_action=0, robot_action=0, reward_idx=0):
         if next_state is None:
             next_state = state
 
-
-        def shaping_fn(state):
-            def is_subset(plate, recipe):
-                plate_counts = Counter(plate)
-                recipe_counts = Counter(plate)
-                return all(plate_counts[k] <= recipe_counts[k] for k in plate_counts)
-
-            def l1_dist(p, q):
-                return abs(p - q)
-                # return sum(abs(x - z) for x, z in zip(p, q))
-
-            total = 0.0
-            hand = state['robot_hand']
-            plate = state['plate']
-            reward_idx = state['reward_idx']
-            # TODO: Should check whether the item in hand is actually useful (e.g. not already on the plate, contributes to some recipe)
-            if hand == '':
-                pass
-            else:
-                new_plate = list(plate)
-                new_plate.append(hand)
-                new_plate = tuple(sorted(new_plate))
-                if is_subset(new_plate, self.recipes[reward_idx]):
-                    plate_pos = self.item_to_counter['P']
-                    dist_to_plate = l1_dist(state['robot_pos'], plate_pos)
-                    k = (self.width + self.height) / 2
-                    total += 2.0 * np.exp((-1) * dist_to_plate / k)
-                else:
-                    # total += 0.1
-                    total -= 1.0
-
-            if plate == '':
-                pass
-            elif is_subset(plate, self.recipes[reward_idx]):
-                total += 3.0 * len(plate)
-            else:
-                # TODO: Should check that the plate corresponds to some possible recipe
-                total -= 1.0
-                # total += 0.2 * len(plate)
-
-            return total
-
-
-        recipe_reward = 30 * int(state['plate'] == self.recipes[reward_idx] and state['recipe_made']) + shaping_fn(state)
-        # recipe_reward = 100 * int(state['plate'] != self.recipes[reward_idx] and next_state['plate'] == self.recipes[reward_idx])
-        return recipe_reward
-
-    def reward_fn2(self, state, next_state=None, human_action=0, robot_action=0, reward_idx=0):
         def bonus_reward(state):
             def is_subset(plate, recipe):
                 plate_counts = Counter(plate)
-                recipe_counts = Counter(plate)
+                recipe_counts = Counter(recipe)
                 return all(plate_counts[k] <= recipe_counts[k] for k in plate_counts)
 
             def l1_dist(p, q):
@@ -175,18 +121,20 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
             # TODO: Should check whether the item in hand is actually useful (e.g. not already on the plate, contributes to some recipe)
             if hand == '':
                 pass
-            else:
+            elif not state['recipe_made']:
                 new_plate = list(plate)
                 new_plate.append(hand)
                 new_plate = tuple(sorted(new_plate))
+
+                plate_pos = self.item_to_counter['P']
+                dist_to_plate = l1_dist(state['robot_pos'], plate_pos)
+                k = (self.width + self.height) / 2
+
                 if is_subset(new_plate, self.recipes[reward_idx]):
-                    plate_pos = self.item_to_counter['P']
-                    dist_to_plate = l1_dist(state['robot_pos'], plate_pos)
-                    k = (self.width + self.height) / 2
                     total += 2.0 * np.exp((-1) * dist_to_plate / k)
                 else:
                     # total += 0.1
-                    total -= 1.0
+                    total += 1.0 * np.exp((-1) * dist_to_plate / k)
 
             if plate == '':
                 pass
@@ -194,17 +142,30 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
                 total += 2.0 * len(plate)
             else:
                 # TODO: Should check that the plate corresponds to some possible recipe
-                total -= 10.0
-                # total += 0.2 * len(plate)
+                # total -= 5.0
+                total += 0.2 * len(plate)
 
             return total
 
-        correct_recipe_reward = 10 * int(state['plate'] == self.recipes[reward_idx] and state['recipe_made'])
 
-        reward = correct_recipe_reward + bonus_reward(state)
+        reward = 0
+
+        recipe_just_made = (not state['recipe_made']) and next_state['recipe_made']
+
+        if recipe_just_made:
+            if state['plate'] == self.recipes[reward_idx]:
+                value = 10
+            else:
+                value = 1
+            time_to_prepare = next_state['time']
+            reward += value * (1 - (time_to_prepare/self.horizon)**4)
+
+
+        # correct_recipe_reward = value * int(state['plate'] == self.recipes[reward_idx] and state['recipe_made'])
+        # reward += correct_recipe_reward
+
+        reward += 0.05 * bonus_reward(state)
         return reward
-
-    reward_fn = reward_fn2
 
     def transition_fn(self, state, human_action=0, robot_action=0):
         s = deepcopy(state)
@@ -219,14 +180,16 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
         s['human_pos'] = self.update_pos(human_pos, human_action)
         s['robot_pos'] = self.update_pos(robot_pos, robot_action)
 
-        s['human_hand'] = self.update_hand(human_pos, human_hand, human_action)
-        s['robot_hand'] = self.update_hand(robot_pos, robot_hand, robot_action)
+        s['human_hand'] = self.update_hand(human_pos, human_hand, human_action, recipe_made)
+        s['robot_hand'] = self.update_hand(robot_pos, robot_hand, robot_action, recipe_made)
 
         s['plate'] = self.update_plate(plate, recipe_made, human_pos, human_hand, human_action)
         s['plate'] = self.update_plate(s['plate'], recipe_made, robot_pos, robot_hand, robot_action)
 
         s['recipe_made'] = self.update_recipe(recipe_made, state['plate'], s['plate'], human_pos, human_hand, human_action)
         s['recipe_made'] = self.update_recipe(s['recipe_made'], state['plate'], s['plate'], robot_pos, robot_hand, robot_action)
+
+        s['time'] += 1
 
         return s
 
@@ -243,11 +206,13 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
         return new_pos
 
 
-    def update_hand(self, pos, hand, action):
+    def update_hand(self, pos, hand, action, recipe_made):
         if action == self.INTERACT and pos in self.counter_items:
             if hand == '' and self.counter_items[pos] != 'P':
                 return self.counter_items[pos]
-            if self.counter_items[pos] in (hand, 'P'):
+            elif self.counter_items[pos] == hand:
+                return ''
+            elif self.counter_items[pos] == 'P' and not recipe_made:
                 return ''
         return hand
 
@@ -272,347 +237,6 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
             )
         )
 
-    def state_to_id(self, state, humanonly=False):
-        items = list(self.counter_items.values())[:-1]
-        num_items = len(items)
-
-        pos_range = self.num_pos
-        hand_range = num_items + 1
-        human_ranges = [pos_range, hand_range]
-
-        # Not currently supporting repeated items
-        plate_ranges = [2] * num_items
-
-        list_index = lambda l, v : l.index(v) if v in l else -1
-
-        human_pos = state['human_pos']
-        human_hand = state['human_hand']
-        human_hand_id = 1 + list_index(items, human_hand)
-        human_ids = [human_pos, human_hand_id]
-
-        if not humanonly:
-            robot_pos = state['robot_pos']
-            robot_hand = state['robot_hand']
-            robot_hand_id = 1 + list_index(items, robot_hand)
-            robot_ids = [robot_pos, robot_hand_id]
-            robot_ranges = human_ranges.copy()
-        else:
-            robot_ids = []
-            robot_ranges = []
-
-        plate_ids = [int(item in state['plate']) for item in items]
-
-        ids = [*human_ids, *robot_ids, *plate_ids]
-        ranges = [*human_ranges, *robot_ranges, *plate_ranges]
-
-        k = 1
-        full_id = 0
-        for idx, r in zip(ids, ranges):
-            full_id += k * idx
-            k *= r
-
-        return full_id
-
-    
-    def id_to_state(self, full_id, humanonly=False):
-        items = list(self.counter_items.values())[:-1]
-        num_items = len(items)
-
-        pos_range = self.num_pos
-        hand_range = num_items + 1
-        human_ranges = [pos_range, hand_range]
-
-        plate_ranges = [2] * num_items
-
-        if not humanonly:
-            robot_ranges = human_ranges.copy()
-        else:
-            robot_ranges = []
-
-        ranges = [*human_ranges, *robot_ranges, *plate_ranges]
-
-        ids = []
-        k = 1
-        for r in ranges:
-            idx = (full_id // k) % r
-            ids.append(idx)
-            k *= r
-
-        if not humanonly:
-            human_pos, human_hand_id, robot_pos, robot_hand_id, *plate_ids = ids
-        else:
-            human_pos, human_hand_id, *plate_ids = ids
-            robot_pos = self.initial_state['robot_pos']
-            robot_hand_id = 0
-
-
-        human_hand_id -= 1
-        if human_hand_id == -1:
-            human_hand = ''
-        else:
-            human_hand = items[human_hand_id]
-
-        robot_hand_id -= 1
-        if robot_hand_id == -1:
-            robot_hand = ''
-        else:
-            robot_hand = items[robot_hand_id]
-
-
-        plate = tuple(item for item, idx in zip(items, plate_ids) if idx == 1)
-
-        state = {
-            'human_pos' : human_pos,
-            'human_hand' : human_hand,
-            'robot_pos' : robot_pos,
-            'robot_hand' : robot_hand,
-            'plate' : plate,
-        }
-
-        return state
-
-
-    def get_num_states(self, humanonly=False):
-        items = list(self.counter_items.values())[:-1]
-        num_items = len(items)
-
-        pos_range = self.num_pos
-        hand_range = num_items + 1
-        human_ranges = [pos_range, hand_range]
-
-        if humanonly:
-            robot_ranges = []
-        else:
-            robot_ranges = human_ranges.copy()
-
-        plate_ranges = [2] * num_items
-
-        ranges = [*human_ranges, *robot_ranges, *plate_ranges]
-        return functools.reduce(lambda a, b : a * b, ranges)
-
-    
-    def get_T_and_Rs(self):
-        print('Computing T...')
-        nS = self.get_num_states()
-        nAh = self.human_action_space.n
-        nAr = self.robot_action_space.n
-        nR = len(self.reward_distribution)
-
-
-        T = {}
-        T_shape = (nS, nAh, nAr, nS)
-        Rs = [{} for _ in range(nR)]
-        R_shape = (nS, nAh, nAr, nS)
-        print(T_shape)
-
-        for s_id, a_h, a_r in itertools.product(range(nS), range(nAh), range(nAr)):
-            s = self.id_to_state(s_id)
-
-            next_s = self.transition_fn(s, a_h, a_r)
-            next_s_id = self.state_to_id(next_s)
-
-            T[s_id, a_h, a_r, next_s_id] = 1.0
-            for idx in range(nR):
-                Rs[idx][s_id, a_h, a_r, next_s_id] = self.reward_fn(state=s, human_action=a_h, robot_action=a_r, next_state=next_s, reward_idx=idx)
-
-            if len(T) % 10000 == 0:
-                print(len(T))
-
-        T = dict_to_sparse(T, T_shape)
-        Rs = [dict_to_sparse(R, R_shape) for R in Rs]
-
-        print('Computing T and Rs... Done!')
-        return T, Rs
-
-    def get_T(self):
-        print('Computing T...')
-        nS = self.get_num_states()
-        nAh = self.human_action_space.n
-        nAr = self.robot_action_space.n
-
-        T = {}
-        T_shape = (nS, nAh, nAr, nS)
-        print(T_shape)
-
-        for s_id, a_h, a_r in itertools.product(range(nS), range(nAh), range(nAr)):
-            s = self.id_to_state(s_id)
-
-            next_s = self.transition_fn(s, a_h, a_r)
-            next_s_id = self.state_to_id(next_s)
-
-            T[s_id, a_h, a_r, next_s_id] = 1.0
-
-            if len(T) % 10000 == 0:
-                print(len(T))
-
-        T = dict_to_sparse(T, T_shape)
-
-        print('Computing T... Done!')
-        return T
-
-    def get_T_humanonly(self):
-        print('Computing T...')
-        nS = self.get_num_states(humanonly=True)
-        nA = self.human_action_space.n
-
-        T = {}
-        T_shape = (nS, nA, nS)
-
-        for s_id, a in itertools.product(range(nS), range(nA)):
-            s = self.id_to_state(s_id, humanonly=True)
-
-            next_s = self.transition_fn(s, a)
-            next_s_id = self.state_to_id(next_s, humanonly=True)
-
-            T[s_id, a, next_s_id] = 1.0
-
-        T = dict_to_sparse(T, T_shape)
-
-        print('Computing T... Done!')
-        return T
-
-    
-    def get_R(self, reward_idx):
-        nS = self.get_num_states()
-        nAh = self.human_action_space.n
-        nAr = self.robot_action_space.n
-
-        R = {}
-        R_shape = (nS, nAh, nAr, nS)
-
-        reward_fn = self.reward_distribution[reward_idx][0]
-
-        for s_id, a_h, a_r in itertools.product(range(nS), range(nAh), range(nAr)):
-            s = self.id_to_state(s_id)
-
-            next_s = self.transition_fn(s, a_h, a_r)
-            next_s_id = self.state_to_id(next_s)
-
-            R[s_id, a_h, a_r, next_s_id] = reward_fn(state=s, human_action=a_h, robot_action=a_r, next_state=next_s)
-
-            if len(R) % 10000 == 0:
-                print(len(R))
-
-        R = dict_to_sparse(R, R_shape)
-
-        return R
-
-
-    def get_R_humanonly(self, reward_idx):
-        nS = self.get_num_states(humanonly=True)
-        nA = self.human_action_space.n
-
-        R = {}
-        R_shape = (nS, nA, nS)
-
-        reward_fn = self.reward_distribution[reward_idx][0]
-
-        for s_id, a in itertools.product(range(nS), range(nA)):
-            s = self.id_to_state(s_id, humanonly=True)
-
-            next_s = self.transition_fn(s, a)
-            next_s_id = self.state_to_id(next_s, humanonly=True)
-
-            R[s_id, a, next_s_id] = reward_fn(state=s, human_action=a, next_state=next_s)
-
-        R = dict_to_sparse(R, R_shape)
-
-        return R
-
-
-def get_pedagogical_T(ag, T, LH_P):
-    nR, nS, nA = LH_P.shape
-
-
-
-
-def compute_pedagogic_human_policy_fn(ag):        
-    print('Computing pedagogic human policy...')
-    # Compute LiteralHuman policies
-    nS = ag.get_num_states(humanonly=True)
-    nA = ag.human_action_space.n
-    nR = len(ag.reward_distribution)
-
-    LH_P = np.empty((nR, nS, nA))
-
-    use_egreedy = False
-
-    T = ag.get_T_humanonly()
-    Rs = [ag.get_R_humanonly(r_idx) for r_idx in range(nR)]
-    for r_idx, R in enumerate(Rs):
-        # We make the reward state,action only, which
-        # is fine here, since the env is deterministic
-        R = R.sum(axis=2)
-        num_iter = 1000
-        LH_P[r_idx] = softhard_value_iteration(T, R, discount=ag.discount, beta=1e0, num_iter=num_iter)
-        if use_egreedy:
-            EPS = 5e-4
-            LH_P += EPS / nA
-            LH_P /= LH_P.sum(axis=2)[:, :, None]
-
-    # EPS = 1e-3
-    # LH_P[LH_P < EPS] = EPS
-    # LH_P /= LH_P.sum(axis=2)[:, :, None]
-
-    # LiteralRobot belief updates
-    LR_B = LH_P / np.sum(LH_P, axis=0)
-
-    ped_T = get_pedagogical_T(ag, LH_P)
-    ped_Rs = get_pedagogical_Rs(ag, LH_P)
-
-    for r_idx, R in enumerate(Rs):
-        R_new = R.copy()
-
-    # Compute PedagogicHuman policies
-    PH_P = LR_B / np.sum(LR_B, axis=2)[:, :, None]
-
-    print('Computing pedagogic human policy... Done!')
-    for i in range(0, 12, 3):
-        print(i, '\n', LH_P[:, i])
-        print(i, '\n', LR_B[:, i])
-        print(i, '\n', PH_P[:, i])
-    breakpoint()
-
-    def human_policy_fn(unused_ag, reward_idx):
-        def human_policy(state):
-            state_id = ag.state_to_id(state, humanonly=True)
-            return sample_distribution(PH_P[reward_idx, state_id])
-        return human_policy
-
-    return human_policy_fn
-
-class TabularMiniPieAssistanceGame(AssistanceGame):
-    def __init__(self):
-        f_ag = MiniPieGridworldAssistanceGame()
-
-        num_states = f_ag.get_num_states()
-        state_space = Discrete(num_states)
-        human_action_space = f_ag.human_action_space
-        robot_action_space = f_ag.robot_action_space
-        # T = f_ag.get_T()
-        T, Rs = f_ag.get_T_and_Rs()
-        rewards_dist = [(R, prob) for R, (_, prob) in zip(Rs, f_ag.reward_distribution)]
-        horizon = f_ag.horizon
-        discount = f_ag.discount
-
-        initial_state_id = f_ag.state_to_id(f_ag.initial_state)
-        initial_state_dist = np.zeros(num_states)
-        initial_state_dist[initial_state_id] = 1.0
-
-        self.f_ag = f_ag
-
-        super().__init__(
-            state_space=state_space,
-            human_action_space=human_action_space,
-            robot_action_space=robot_action_space,
-            transition=T,
-            reward_distribution=rewards_dist,
-            initial_state_distribution=initial_state_dist,
-            horizon=horizon,
-            discount=discount,
-        )
-
-
 
 class MiniPieGridworldAssistanceProblem(AssistanceProblem):
     def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
@@ -620,34 +244,24 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
         self.ag = assistance_game
 
         human_policy_fn = minipie_human_policy_fn
-        # human_policy_fn = compute_pedagogic_human_policy_fn(self.ag)
 
-        functional = True
-        if functional:
-            state_space_builder = pie_state_space_builder
-            transition_model_fn_builder = pie_transition_model_fn_builder
-            reward_model_fn_builder = pie_reward_model_fn_builder
-            sensor_model_fn_builder = pie_sensor_model_fn_builder
-            observation_model_fn = pie_observation_model_fn_builder(assistance_game)
+        state_space_builder = pie_state_space_builder
+        transition_model_fn_builder = pie_transition_model_fn_builder
+        reward_model_fn_builder = pie_reward_model_fn_builder
+        sensor_model_fn_builder = pie_sensor_model_fn_builder
+        observation_model_fn = pie_observation_model_fn_builder(assistance_game)
 
-            super().__init__(
-                assistance_game=assistance_game,
-                human_policy_fn=human_policy_fn,
+        super().__init__(
+            assistance_game=assistance_game,
+            human_policy_fn=human_policy_fn,
 
-                state_space_builder=state_space_builder,
-                transition_model_fn_builder=transition_model_fn_builder,
-                reward_model_fn_builder=reward_model_fn_builder,
-                sensor_model_fn_builder=sensor_model_fn_builder,
-                observation_model_fn=observation_model_fn,
-            )
+            state_space_builder=state_space_builder,
+            transition_model_fn_builder=transition_model_fn_builder,
+            reward_model_fn_builder=reward_model_fn_builder,
+            sensor_model_fn_builder=sensor_model_fn_builder,
+            observation_model_fn=observation_model_fn,
+        )
 
-        else:
-            self.t_ag = TabularMiniPieAssistanceGame()
-            super().__init__(
-                assistance_game=self.t_ag,
-                human_policy_fn=human_policy_fn,
-            )
-            
 
     def render(self, mode='human'):
         width = self.ag.width
@@ -777,10 +391,8 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
 
             ### Render formulae
 
-            g_x0 = -110 + grid_side
-            g_y0 = -110 + grid_side
-            header_x = g_x0 + 0 * grid_side
-            header_y = g_y0 + (height + 2) * grid_side
+            header_x = g_x0 - 0.5 * grid_side
+            header_y = g_y0 + (height + 1.8) * grid_side
             hl = 15
 
             header_transform = rendering.Transform()
@@ -797,35 +409,66 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
 
             # Render thought bubble
 
+            t_dir = 1
+
             scale = 0.8
             thought = rendering.make_ellipse(scale * grid_side/2, scale * 0.7*grid_side/2)
             thought.set_color(0.9, 0.9, 0.9)
             thought_transform = rendering.Transform()
-            thought_transform.set_translation(-gs, gs)
+            thought_transform.set_translation(t_dir * 1 * gs, gs)
             thought.add_attr(thought_transform)
             thought.add_attr(self.human_transform)
 
             self.viewer.add_geom(thought)
 
+            thought_border = rendering.make_ellipse(scale * grid_side/2, scale * 0.7*grid_side/2, filled=False)
+            thought_border.set_color(0.7, 0.7, 0.7)
+            thought_border_transform = rendering.Transform()
+            thought_border_transform.set_translation(t_dir * 1 * gs, gs)
+            thought_border.add_attr(thought_border_transform)
+            thought_border.add_attr(self.human_transform)
+
+            self.viewer.add_geom(thought_border)
+
             scale = 0.17
             thought2 = rendering.make_ellipse(scale * grid_side/2, scale * grid_side/2)
             thought2.set_color(0.9, 0.9, 0.9)
             thought_transform2 = rendering.Transform()
-            thought_transform2.set_translation(-0.6 * gs, 0.6 * gs)
+            thought_transform2.set_translation(t_dir * 0.6 * gs, 0.6 * gs)
             thought2.add_attr(thought_transform2)
             thought2.add_attr(self.human_transform)
 
             self.viewer.add_geom(thought2)
 
+            scale = 0.17
+            thought2_border = rendering.make_ellipse(scale * grid_side/2, scale * grid_side/2, filled=False)
+            thought2_border.set_color(0.7, 0.7, 0.7)
+            thought_transform2 = rendering.Transform()
+            thought_transform2.set_translation(t_dir * 0.6 * gs, 0.6 * gs)
+            thought2_border.add_attr(thought_transform2)
+            thought2_border.add_attr(self.human_transform)
+
+            self.viewer.add_geom(thought2_border)
+
+
             scale = 0.1
             thought3 = rendering.make_ellipse(scale * grid_side/2, scale * grid_side/2)
             thought3.set_color(0.9, 0.9, 0.9)
             thought_transform3 = rendering.Transform()
-            thought_transform3.set_translation(-0.4 * gs, 0.4 * gs)
+            thought_transform3.set_translation(t_dir * 0.4 * gs, 0.4 * gs)
             thought3.add_attr(thought_transform3)
             thought3.add_attr(self.human_transform)
 
             self.viewer.add_geom(thought3)
+
+            thought3_border = rendering.make_ellipse(scale * grid_side/2, scale * grid_side/2, filled=False)
+            thought3_border.set_color(0.7, 0.7, 0.7)
+            thought_transform3 = rendering.Transform()
+            thought_transform3.set_translation(t_dir * 0.4 * gs, 0.4 * gs)
+            thought3_border.add_attr(thought_transform3)
+            thought3_border.add_attr(self.human_transform)
+
+            self.viewer.add_geom(thought3_border)
 
             self.pies = []
             for pie_idx in ('012'):
@@ -834,17 +477,14 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
                 pie.add_attr(thought_transform)
                 self.pies.append(pie)
 
+            for obj in [thought, thought2, thought3] + self.pies:
+                r, g, b, _ = obj._color.vec4
+                obj._color.vec4 = (r, g, b, 0.5)
 
 
-        if isinstance(self.state, dict):
-            state = self.state
-        else:
-            nS0 = self.t_ag.state_space.n
-            idx = self.state % nS0
-            rew_idx = self.state // nS0
-            state = self.ag.id_to_state(self.state)
-            state['reward_idx'] = rew_idx
 
+
+        state = self.state
         print(state)
 
         human_pos = state['human_pos']
@@ -1030,6 +670,13 @@ def get_minipie_hardcoded_robot_policy(env, *args, **kwargs):
                     R, A,             # get dark flour
                     L, A,             # Take to plate
                 ],
+            ]
+
+            nowait_policies = [
+                [
+                    L, L, L, A, # Get dark flour
+                    L, A,    # Take to plate
+                ],
 
                 [
                     L, L, L, A, # Get dark flour
@@ -1039,7 +686,7 @@ def get_minipie_hardcoded_robot_policy(env, *args, **kwargs):
                 ],
             ]
 
-            # robot_policies[1:] = reversed(robot_policies[1:])
+            # robot_policies = nowait_policies
 
             if r_idx is None:
                 robot_policy = robot_policies[0]
