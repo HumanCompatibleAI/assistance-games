@@ -70,7 +70,7 @@ def run(
     num_episodes=10,
     **kwargs,
 ):
-    if logging is not None:
+    if logging:
         log_dir_base = './logs'
         if not output_folder:
             output_folder = env_name
