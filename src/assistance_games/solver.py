@@ -441,6 +441,7 @@ def deep_rl_solve(
             n_steps=256,
             seed=seed,
             tensorboard_log=log_dir,
+            n_cpu_tf_sess=8,
         )
     else:
         policy = PPO2(

@@ -462,7 +462,6 @@ def pie_observation_model_fn_builder(ag):
     num_dims = 2 * pos_ob_dims + 3 * num_ingredients
     low = np.zeros(num_dims)
     high = np.ones(num_dims)
-    high[:4] = [ag.width, ag.height, ag.width, ag.height]
 
     ob_space = Box(low=low, high=high)
 

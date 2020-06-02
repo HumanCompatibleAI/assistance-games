@@ -25,7 +25,7 @@ import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, dict_to_sparse, sample_distribution
 
 
-class SmallPieGridworldAssistanceGame(AssistanceGame):
+class Small2PieGridworldAssistanceGame(AssistanceGame):
     def __init__(self):
         self.width = 3
         self.height = 4
@@ -452,9 +452,9 @@ def compute_pedagogic_human_policy_fn(ag):
 
     return human_policy_fn
 
-class TabularSmallPieAssistanceGame(AssistanceGame):
+class TabularSmall2PieAssistanceGame(AssistanceGame):
     def __init__(self):
-        f_ag = SmallPieGridworldAssistanceGame()
+        f_ag = Small2PieGridworldAssistanceGame()
 
         state_space = Discrete(f_ag.get_num_states())
         human_action_space = f_ag.human_action_space
@@ -476,9 +476,9 @@ class TabularSmallPieAssistanceGame(AssistanceGame):
 
 
 
-class SmallPieGridworldAssistanceProblem(AssistanceProblem):
+class Small2PieGridworldAssistanceProblem(AssistanceProblem):
     def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
-        assistance_game = SmallPieGridworldAssistanceGame()
+        assistance_game = Small2PieGridworldAssistanceGame()
         self.ag = assistance_game
 
         human_policy_fn = pie_human_policy_fn
@@ -504,7 +504,7 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
             )
 
         else:
-            self.t_ag = TabularSmallPieAssistanceGame()
+            self.t_ag = TabularSmall2PieAssistanceGame()
             super().__init__(
                 assistance_game=assistance_game,
                 human_policy_fn=human_policy_fn,

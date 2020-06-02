@@ -23,6 +23,7 @@ from assistance_games.core import (
     BeliefObservationModel,
     FeatureSenseObservationModel,
     discrete_reward_model_fn_builder,
+    TerminationModel
 )
 
 from assistance_games.parser import read_pomdp
@@ -78,8 +79,10 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
                                                 h_away_timer=self.max_h_away_timer + 1,
                                                 query=self.n_queries + 1)
 
-        self.one_hot_features = {'r_x', 'r_y', 'h_x', 'h_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
-        num_regular_features = len(self.init_state) - len(self.one_hot_features)
+        self.excluded_features = {'h_x', 'h_y'}
+        self.one_hot_features = {'r_x', 'r_y', 'meal', 'meal_timer', 'drink', 'h_away_timer', 'query'}
+        assert not self.one_hot_features.intersection(self.excluded_features)
+        num_regular_features = len(self.init_state) - len(self.one_hot_features) - len(self.excluded_features)
         len_one_hot_features = 0
         for feature in self.one_hot_features:
             assert hasattr(self.init_state, feature)
@@ -264,6 +267,8 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
         if s.query > 0:
             if s.h_away_timer > 0:
                 r += -3
+            else:
+                r += -0.01
         return r
 
     def make_feature_matrix(self):
@@ -276,7 +281,7 @@ class MealDrinkGridHumanMovesAG(AssistanceGame):
         # s is the flat namedtuple with attributes ['r_x', 'r_y', 'meal', 'meal_timer', 'drink', 'query', 'time']
         f_vec = np.zeros(self.feature_vector_length, dtype='float32')
         i = 0
-        for feature in s._fields:
+        for feature in set(s._fields) - self.excluded_features:
             if feature in self.one_hot_features:
                 f_vec[i + getattr(s, feature)] = 1
                 i += getattr(self.discrete_feature_dims, feature)
@@ -312,6 +317,17 @@ def human_response_meal_drink_grid(assistance_game, reward, **kwargs):
             else:
                 policy[idx, 7] = 1.0
     return policy
+
+
+class MealDrinkTerminationModel(TerminationModel):
+    def __call__(self):
+        s_idx = self.pomdp.state % self.pomdp.assistance_game.state_space.n
+        s = self.pomdp.assistance_game.get_state(s_idx)
+        return s.meal == 4 and s.drink == 3
+
+
+def meal_drink_termination_model_fn_builder(ag, human_policy):
+    return MealDrinkTerminationModel
 
 
 class MealDrinkGridHumanMovesProblem(AssistanceProblem):
@@ -354,6 +370,7 @@ class MealDrinkGridHumanMovesProblem(AssistanceProblem):
             human_policy_fn=human_policy_fn,
             observation_model_fn=observation_model_fn,
             reward_model_fn_builder=reward_model_fn_builder,
+            termination_model_fn_builder=meal_drink_termination_model_fn_builder
         )
 
     def render(self, mode='human'):

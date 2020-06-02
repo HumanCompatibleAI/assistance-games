@@ -263,6 +263,32 @@ class FunctionalRewardModel(RewardModel):
         state = self.pomdp.state
         return self.fn(prev_state, action, state)
 
+class ShapedFunctionalRewardModel(RewardModel):
+    def __init__(self, pomdp, fn, shaping_fns):
+        super().__init__(pomdp)
+        self.fn = fn
+        self.shaping_fns = shaping_fns
+
+    def __call__(self):
+        s1 = self.pomdp.prev_state
+        action = self.pomdp.action
+        s2 = self.pomdp.state
+        gamma = self.pomdp.discount
+        done = self.pomdp.done
+        base_reward = self.fn(s1, action, s2)
+        # Shaping rewards: add gammma phi(s2) - phi(s1) for each shaping function phi
+        # If done is true, imagine that we undergo one more transition to an absorbing state where all the phis are zero
+        # Then we add gamma phi(s2) - phi(s1) + gamma * (0 - phi(s2)) = - phi(s)
+        # Proper reward shaping should have "if done:" below, we use "if False:" to turn off the last step reward shaping
+        # This effectively allows the agent to "keep" any shaping reward it has
+        # on the last step, which drastically increases the effectiveness of
+        # shaping, but also loses the guarantee of leaving the optimal policy unchanged.
+        if False:
+            shaping_reward = -sum([fn(s1) for fn in self.shaping_fns])
+        else:
+            shaping_reward = sum([gamma * fn(s2) - fn(s1) for fn in self.shaping_fns])
+        return base_reward + shaping_reward
+            
 ### Termination models
 
 class TerminationModel:
