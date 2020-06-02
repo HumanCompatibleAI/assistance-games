@@ -107,7 +107,7 @@ def run(
 
     algo = algos[algo_name]
 
-    if algo_name == 'deeprl':
+    if algo_name in ('deeprl', 'ppo', 'lstm-ppo', 'dqn'):
         # We want deeprl to learn the optimal policy without
         # being helped on tracking beliefs
         env = env_fns[env_name](use_belief_space=False)
