@@ -5,7 +5,6 @@ but might be expanded/replaced as needed.
 """
 
 import numpy as np
-import pyglet.text
 from gym.envs.classic_control import rendering
 from gym.envs.classic_control.rendering import (
         Geom, make_circle, Viewer, Transform, FilledPolygon, make_polygon)
@@ -82,18 +81,3 @@ class Grid(rendering.Geom):
     def set_color(self, r, g, b):
         for line in self.lines:
             line.set_color(r, g, b)
-
-
-class Text(rendering.Geom):
-    def __init__(self, *, x=0, y=0, text='[placeholder]'):
-        super().__init__()
-        self.text = text
-        self.label = pyglet.text.Label(self.text,
-                                  font_name='Times New Roman',
-                                  font_size=16,
-                                  x=x, y=y,
-                                  anchor_x='center', anchor_y='center',
-                                  color=(0, 0, 0, 255))
-
-    def render1(self):
-        self.label.draw()
