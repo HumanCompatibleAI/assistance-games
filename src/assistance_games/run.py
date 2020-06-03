@@ -13,6 +13,7 @@ from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
+from assistance_games.core.core2 import ReducedAssistancePOMDP
 
 def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
     if num_episodes == -1:
@@ -83,6 +84,7 @@ def run(
         'pie_mdp' : envs.PieMDPAssistanceProblem,
         'pie' : envs.PieGridworldAssistanceProblem,
         'pie_small' : envs.SmallPieGridworldAssistanceProblem,
+        'pie_small2' : (lambda *args, **kwargs: ReducedAssistancePOMDP(envs.SmallPieGridworld2())),
     }
     algos = {
         'exact' : exact_vi,
