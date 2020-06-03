@@ -72,6 +72,9 @@ def run(
         log_dir_base = None
         log_dir = None
 
+    def make_env2_fn(cls):
+        return lambda *args, **kwargs: ReducedAssistancePOMDP(cls())
+
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
         'fourthree' : envs.FourThreeMaze,
@@ -84,7 +87,8 @@ def run(
         'pie_mdp' : envs.PieMDPAssistanceProblem,
         'pie' : envs.PieGridworldAssistanceProblem,
         'pie_small' : envs.SmallPieGridworldAssistanceProblem,
-        'pie_small2' : (lambda *args, **kwargs: ReducedAssistancePOMDP(envs.SmallPieGridworld2())),
+        'redblue2' : make_env2_fn(envs.RedBlue2),
+        'pie_small2' : make_env2_fn(envs.SmallPieGridworld2),
     }
     algos = {
         'exact' : exact_vi,
