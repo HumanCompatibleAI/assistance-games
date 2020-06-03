@@ -270,8 +270,7 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
         grid_side = 30
         gs = grid_side
 
-        def make_image_transform(filename, w=1.0, h=None, s=0.6, c=None):
-            if h is None: h = w
+        def make_image_transform(filename, w=1.0, h=1.0, s=0.6, c=None):
             fullname = get_asset(f'images/{filename}')
             img = rendering.Image(fullname, s * w * gs, s * h * gs)
             transform = rendering.Transform()
@@ -284,15 +283,15 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
 
         make_item_image = {
             'A' : partial(make_image_transform, 'flour4.png'),
-            'B' : partial(make_image_transform, 'sugar6.png', w=1.2, h=1.2),
+            'B' : partial(make_image_transform, 'cherry2.png', w=1.3, h=1.3),
             'C' : partial(make_image_transform, 'chocolate4.png'),
-            'D' : partial(make_image_transform, 'cherry1.png'),
+            'D' : partial(make_image_transform, 'sugar6.png', w=1.2, h=1.2),
             'E' : partial(make_image_transform, 'chocolate4.png', c=(0.1, 0.1, 0.1)),
             'F' : partial(make_image_transform, 'apple3.png', c=(0.7, 0.3, 0.2)),
             'P' : partial(make_image_transform, 'plate1.png', w=1.3, h=1.3),
             '+' : partial(make_image_transform, 'plus1.png', w=0.5, h=0.5),
-            '=' : partial(make_image_transform, 'equal1.png', w=0.5, h=0.2),
-            '0' : partial(make_image_transform, 'pie1.png'),
+            '=' : partial(make_image_transform, 'rightarrow1.png', w=0.5, h=0.2),
+            '0' : partial(make_image_transform, 'pie-red1.png'),
             '1' : partial(make_image_transform, 'cake1.png'),
             '2' : partial(make_image_transform, 'apple-pie2.png', c=(0.7, 0.3, 0.2)),
         }
@@ -336,7 +335,11 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
 
 
         if self.viewer is None:
-            self.viewer = rendering.Viewer(500,800)
+            k = 1.0
+            viewer_width = int(k * 500)
+            viewer_height = int(k * 800)
+
+            self.viewer = rendering.Viewer(viewer_width, viewer_height)
             self.viewer.set_bounds(-130, 120, -150, 250)
 
             grid_background = make_grid_rect(0, 0, width, height)
@@ -347,18 +350,12 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
             self.grid.set_color(0.85, 0.85, 0.85)
             self.viewer.add_geom(self.grid)
 
-            human_image = get_asset('images/girl9-red2.png')
-            human = rendering.Image(human_image, grid_side, grid_side)
-            self.human_transform = rendering.Transform()
-            human.add_attr(self.human_transform)
+
+            human, self.human_transform = make_image_transform('human1.png', w=0.45, s=0.9)
             self.viewer.add_geom(human)
 
-            robot_image = get_asset('images/robot10.png')
-            robot = rendering.Image(robot_image, grid_side, grid_side)
-            self.robot_transform = rendering.Transform()
-            robot.add_attr(self.robot_transform)
+            robot, self.robot_transform = make_image_transform('robot2.png', s=0.8)
             self.viewer.add_geom(robot)
-
 
             ### Render counters
 
