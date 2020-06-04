@@ -25,7 +25,6 @@ from assistance_games.core import (
 )
 
 from assistance_games.parser import read_pomdp
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, sample_distribution, dict_to_sparse
 
 class MealChoiceTimeDependentAG(AssistanceGame):

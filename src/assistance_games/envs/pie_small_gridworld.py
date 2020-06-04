@@ -17,7 +17,6 @@ from assistance_games.core import (
     TerminationModel,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
@@ -160,6 +159,8 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
         )
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         print(self.state)
 
         width = 5

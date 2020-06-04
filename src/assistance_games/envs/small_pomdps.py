@@ -8,7 +8,6 @@ from assistance_games.core import (
 )
 
 from assistance_games.parser import read_pomdp
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
@@ -95,6 +94,8 @@ class FourThreeMaze(POMDP):
         self.viewer = None
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         if self.viewer is None:
             self.viewer = rendering.Viewer(500,500)
             self.viewer.set_bounds(-120, 120, -120, 120)
