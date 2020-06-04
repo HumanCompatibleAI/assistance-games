@@ -404,19 +404,35 @@ def dqn(
     total_timesteps=1000000,
     learning_rate=1e-4,
     seed=0,
+    num_evals=200,
     log_dir=None,
+    tensorboard_log=None,
+    eval_env=None,
+    **kwargs,
 ):
     from stable_baselines.deepq.policies import MlpPolicy
     from stable_baselines import DQN
+    from stable_baselines.common.callbacks import EvalCallback
+
+    eval_freq = max(total_timesteps // num_evals, 1000)
+    callback = EvalCallback(
+        eval_env=eval_env,
+        eval_freq=eval_freq,
+        n_eval_episodes=50,
+        log_path=log_dir,
+    )
 
     policy = DQN(
         MlpPolicy,
         pomdp,
         learning_rate=learning_rate,
         seed=seed,
-        tensorboard_log=log_dir,
+        tensorboard_log=tensorboard_log,
     )
-    policy.learn(total_timesteps=total_timesteps)
+    policy.learn(
+        total_timesteps=total_timesteps,
+        callback=callback,
+    )
     return policy
 
 def deep_rl_solve(
@@ -426,6 +442,7 @@ def deep_rl_solve(
     use_lstm=True,
     seed=0,
     log_dir=None,
+    **kwargs,
 ):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy

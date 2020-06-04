@@ -636,63 +636,91 @@ def get_minipie_hardcoded_robot_policy(env, *args, **kwargs):
         def predict(self, ob, state=None):
             t, r_idx = state if state is not None else (0, None)
 
-            num_pos = env.ag.num_pos
+            pragmatic = True
+            if pragmatic:
+                num_pos = env.ag.num_pos
 
-            onehot_pos = ob[:num_pos]
-            onehot_y = ob[num_pos:2*num_pos]
+                onehot_pos = ob[:num_pos]
+                onehot_y = ob[num_pos:2*num_pos]
 
-            human_pos = np.argmax(onehot_pos)
+                human_pos = np.argmax(onehot_pos)
 
-            if t == 2:
-                if human_pos == 3:
-                    r_idx = 1
+                if t == 2:
+                    if human_pos == 3:
+                        r_idx = 1
+                    else:
+                        r_idx = 0
+
+                # S, R, U, L, D, A = range(6)
+                R, L, A = range(3)
+
+
+                robot_policies = [
+                    [
+                        R, R, # Wait 1 step
+                        L, L, L, A, # Get dark flour
+                        L, A,    # Take to plate
+                    ],
+
+                    [
+                        R, R,             # Wait 1 step
+                        A,                # get milk chocolate
+                        L, L, L, L, A, # drop in plate
+                        R, A,             # get dark flour
+                        L, A,             # Take to plate
+                    ],
+                ]
+
+                if r_idx is None:
+                    robot_policy = robot_policies[0]
                 else:
-                    r_idx = 0
+                    robot_policy = robot_policies[r_idx]
 
-            # S, R, U, L, D, A = range(6)
-            R, L, A = range(3)
+                act = robot_policy[t] if t < len(robot_policy) else A
 
-
-            robot_policies = [
-                [
-                    R, R, # Wait 1 step
-                    L, L, L, A, # Get dark flour
-                    L, A,    # Take to plate
-                ],
-
-                [
-                    R, R,             # Wait 1 step
-                    A,                # get milk chocolate
-                    L, L, L, L, A, # drop in plate
-                    R, A,             # get dark flour
-                    L, A,             # Take to plate
-                ],
-            ]
-
-            nowait_policies = [
-                [
-                    L, L, L, A, # Get dark flour
-                    L, A,    # Take to plate
-                ],
-
-                [
-                    L, L, L, A, # Get dark flour
-                    L, A,    # Take to plate
-                    R, R, R, R, A,                # get milk chocolate
-                    L, L, L, L, A, # drop in plate
-                ],
-            ]
-
-            # robot_policies = nowait_policies
-
-            if r_idx is None:
-                robot_policy = robot_policies[0]
+                return act, (t+1, r_idx)
             else:
-                robot_policy = robot_policies[r_idx]
+                num_pos = env.ag.num_pos
 
-            act = robot_policy[t] if t < len(robot_policy) else A
+                onehot_pos = ob[:num_pos]
+                onehot_y = ob[num_pos:2*num_pos]
 
-            return act, (t+1, r_idx)
+                human_pos = np.argmax(onehot_pos)
+
+                if t == 6:
+                    if human_pos == 3:
+                        r_idx = 1
+                    else:
+                        r_idx = 0
+
+                # S, R, U, L, D, A = range(6)
+                R, L, A = range(3)
+
+
+                nowait_policies = [
+                    [
+                        L, L, L, A, # Get dark flour
+                        L, A,    # Take to plate
+                    ],
+
+                    [
+                        L, L, L, A, # Get dark flour
+                        L, A,    # Take to plate
+                        R, R, R, R, A,                # get milk chocolate
+                        L, L, L, L, A, # drop in plate
+                    ],
+                ]
+
+                robot_policies = nowait_policies
+
+                if r_idx is None:
+                    robot_policy = robot_policies[0]
+                else:
+                    robot_policy = robot_policies[r_idx]
+
+                act = robot_policy[t] if t < len(robot_policy) else A
+
+                return act, (t+1, r_idx)
 
     return Policy()
 
@@ -719,31 +747,58 @@ def minipie_human_policy_fn(ag, reward):
         ]
 
 
-        policy1 = [
-            R, R, A, # get green apple
-            R, A, # drop in plate
-            L, L, A, # get white flour
-            R, R, A, # take to plate
-            A, # bake
-        ]
+        pedagogic = True
+        if pedagogic:
+            policy1 = [
+                R, R, A, # get green apple
+                R, A, # drop in plate
+                L, L, A, # get white flour
+                R, R, A, # take to plate
+                A, # bake
+            ]
 
-        trail1 = [
-            ((0, 1), '',  {'C' : 0}),
-            ((0, 2), '',  {'C' : 0}),
-            ((0, 3), '',  {'C' : 0}),
-            ((0, 3), 'C', {'C' : 0}),
-            ((1, 3), 'C', {'C' : 0}),
+            trail1 = [
+                ((0, 1), '',  {'C' : 0}),
+                ((0, 2), '',  {'C' : 0}),
+                ((0, 3), '',  {'C' : 0}),
+                ((0, 3), 'C', {'C' : 0}),
+                ((1, 3), 'C', {'C' : 0}),
 
-            ((1, 3), '', {'A' : 0, 'C' : 1}),
-            ((0, 3), '', {'A' : 0, 'C' : 1}),
-            ((0, 2), '', {'A' : 0, 'C' : 1}),
+                ((1, 3), '', {'A' : 0, 'C' : 1}),
+                ((0, 3), '', {'A' : 0, 'C' : 1}),
+                ((0, 2), '', {'A' : 0, 'C' : 1}),
 
-            ((0, 2), 'A', {'A' : 0, 'C' : 1}),
-            ((0, 3), 'A', {'A' : 0, 'C' : 1}),
-            ((1, 3), 'A', {'A' : 0, 'C' : 1}),
+                ((0, 2), 'A', {'A' : 0, 'C' : 1}),
+                ((0, 3), 'A', {'A' : 0, 'C' : 1}),
+                ((1, 3), 'A', {'A' : 0, 'C' : 1}),
 
-            ((1, 3), '', {'A' : 1, 'C' : 1}),
-        ]
+                ((1, 3), '', {'A' : 1, 'C' : 1}),
+            ]
+        else:
+            policy1 = [
+                R, A,       # get white flour
+                R, R, A,    # take to plate
+                L, A,       # get chocolate
+                R, A,       # take to plate
+                A,          # bake
+            ]
+
+            trail1 = [
+                ((0, 1), '', {'A' : 0}),
+                ((0, 2), '', {'A' : 0}),
+
+                ((0, 2), 'A', {'A' : 0}),
+                ((0, 3), 'A', {'A' : 0}),
+                ((1, 3), 'A', {'A' : 0}),
+
+                ((1, 3), '', {'A' : 1, 'C' : 0}),
+                ((0, 3), '', {'A' : 1}),
+
+                ((0, 3), 'C', {'A' : 1}),
+                ((1, 3), 'C', {'A' : 1}),
+
+                ((1, 3), '', {'A' : 1, 'C' : 1}),
+            ]
 
         reward_idx = state['reward_idx']
 

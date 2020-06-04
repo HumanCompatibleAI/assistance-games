@@ -68,6 +68,7 @@ def run(
     output_folder='',
     render=True,
     num_episodes=10,
+    tensorboard=True,
     **kwargs,
 ):
     if logging:
@@ -100,7 +101,7 @@ def run(
         'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
         'lstm-ppo' : partial(deep_rl_solve, log_dir=log_dir_base),
         'ppo' : partial(deep_rl_solve, log_dir=log_dir_base, use_lstm=False),
-        'dqn' : partial(dqn, log_dir=log_dir_base),
+        'dqn' : partial(dqn, log_dir=log_dir),
         'random' : lambda *args, **kwargs : None,
         'hardcoded' : get_hardcoded_policy,
     }
@@ -123,6 +124,13 @@ def run(
     else:
         env = env_fns[env_name](use_belief_space=True)
 
+    if algo_name == 'dqn':
+        eval_env = env_fns[env_name](use_belief_space=False)
+        kwargs['eval_env'] = eval_env
+        if tensorboard:
+            kwargs['tensorboard_log'] = log_dir_base
+
+
     print('\nseed {}'.format(seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
@@ -143,6 +151,8 @@ def main():
     parser.add_argument('-nr', '--no_render', dest='render', action='store_false')
     parser.add_argument('-l', '--logging', default=True, action='store_true')
     parser.add_argument('-nl', '--no_logging', dest='logging', action='store_false')
+    parser.add_argument('-tb', '--tensorboard', default=True, action='store_true')
+    parser.add_argument('-ntb', '--no_tensorboard', dest='tensorboard', action='store_false')
     args = parser.parse_args()
 
     for run_id in range(args.num_runs):
@@ -155,6 +165,7 @@ def main():
             output_folder=args.output_folder,
             total_timesteps=args.total_timesteps,
             render=args.render,
+            tensorboard=args.tensorboard,
             num_episodes=args.num_episodes,
         )
 
