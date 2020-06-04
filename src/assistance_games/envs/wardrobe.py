@@ -14,7 +14,6 @@ from assistance_games.core import (
     discrete_reward_model_fn_builder,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, dict_to_sparse
 
 
@@ -202,6 +201,8 @@ class WardrobeAssistanceProblem(AssistanceProblem):
         )
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         size = self.assistance_game.size
         wardrobe_size = self.assistance_game.wardrobe_size
 

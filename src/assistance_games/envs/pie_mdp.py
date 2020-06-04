@@ -13,7 +13,6 @@ from assistance_games.core import (
     discrete_reward_model_fn_builder,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
@@ -133,6 +132,8 @@ class PieMDPAssistanceProblem(AssistanceProblem):
 
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         if self.viewer is None:
             self.viewer = rendering.Viewer(500,600)
             self.viewer.set_bounds(-120, 120, -150, 120)

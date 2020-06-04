@@ -16,7 +16,6 @@ from assistance_games.core import (
     SensorModel,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
@@ -158,6 +157,7 @@ class PieGridworldAssistanceProblem(AssistanceProblem):
         )
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
         print(self.state)
 
         width = self.ag.width

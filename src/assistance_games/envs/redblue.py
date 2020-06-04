@@ -12,7 +12,6 @@ from assistance_games.core import (
     discrete_reward_model_fn_builder,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
 
 
@@ -150,6 +149,8 @@ class RedBlueAssistanceProblem(AssistanceProblem):
         self.ag_state_space_n = assistance_game.state_space.n
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         human_grid_pos = [(1, -1), (1, 0), (0, 0), (2, 0)]
         robot_grid_pos = [(1, 0), (0, 0), (2, 0)]
 
