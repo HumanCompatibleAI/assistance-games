@@ -25,7 +25,9 @@ from assistance_games.utils import get_asset, dict_to_sparse, sample_distributio
 
 
 class MiniPieGridworldAssistanceGame(AssistanceGame):
-    def __init__(self):
+    def __init__(self, bonus_shaping=True, **kwargs):
+        self.bonus_shaping = bonus_shaping
+
         self.width = 3
         self.height = 4
 
@@ -163,7 +165,9 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
         # correct_recipe_reward = value * int(state['plate'] == self.recipes[reward_idx] and state['recipe_made'])
         # reward += correct_recipe_reward
 
-        reward += 0.05 * bonus_reward(state)
+        if self.bonus_shaping:
+            reward += 0.05 * bonus_reward(state)
+
         return reward
 
     def transition_fn(self, state, human_action=0, robot_action=0):
@@ -239,7 +243,7 @@ class MiniPieGridworldAssistanceGame(AssistanceGame):
 
 class MiniPieGridworldAssistanceProblem(AssistanceProblem):
     def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
-        assistance_game = MiniPieGridworldAssistanceGame()
+        assistance_game = MiniPieGridworldAssistanceGame(**kwargs)
         self.ag = assistance_game
 
         human_policy_fn = minipie_human_policy_fn

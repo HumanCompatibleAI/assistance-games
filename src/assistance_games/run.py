@@ -93,6 +93,7 @@ def run(
         'pie' : envs.PieGridworldAssistanceProblem,
         'small_pie' : envs.Small2PieGridworldAssistanceProblem,
         'mini_pie' : envs.MiniPieGridworldAssistanceProblem,
+        'mini_pie_nobonus' : partial(envs.MiniPieGridworldAssistanceProblem, bonus_shaping=False),
         'pie_small' : envs.SmallPieGridworldAssistanceProblem,
     }
     algos = {
