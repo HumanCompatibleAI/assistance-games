@@ -23,6 +23,8 @@ setup(
         'sparse>=0.9.1',
         'gym',
         'lark-parser>=0.8',
+        'cvxpy',
+        'pyglet',
         'stable-baselines>=2.9',
         'tensorflow>=1.15.0,<2.0',
     ],
