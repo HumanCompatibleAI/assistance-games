@@ -21,7 +21,6 @@ from assistance_games.core import (
     softhard_value_iteration,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, dict_to_sparse, sample_distribution
 
 
@@ -512,6 +511,8 @@ class Small2PieGridworldAssistanceProblem(AssistanceProblem):
             
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         print(self.state)
 
         width = self.ag.width

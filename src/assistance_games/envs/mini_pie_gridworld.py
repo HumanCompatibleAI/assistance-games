@@ -21,7 +21,6 @@ from assistance_games.core import (
     softhard_value_iteration,
 )
 
-import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, dict_to_sparse, sample_distribution
 
 
@@ -264,6 +263,8 @@ class MiniPieGridworldAssistanceProblem(AssistanceProblem):
 
 
     def render(self, mode='human'):
+        import assistance_games.rendering as rendering
+
         width = self.ag.width
         height = self.ag.height
 
