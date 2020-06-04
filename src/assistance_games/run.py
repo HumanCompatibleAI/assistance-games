@@ -144,7 +144,7 @@ def main():
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     parser.add_argument('-o', '--output_folder', type=str, default='')
-    parser.add_argument('-s', '--seed', type=int, default=0)
+    parser.add_argument('-s', '--seed', type=int, default=None)
     parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
     parser.add_argument('-m', '--num_runs', type=int, default=1)
     parser.add_argument('-p', '--num_episodes', type=int, default=10)
@@ -156,8 +156,12 @@ def main():
     parser.add_argument('-ntb', '--no_tensorboard', dest='tensorboard', action='store_false')
     args = parser.parse_args()
 
+    seed_base = args.seed
+    if seed_base is None:
+        seed_base = np.random.randint(int(1e6))
+
     for run_id in range(args.num_runs):
-        seed = args.seed + run_id
+        seed = seed_base + run_id
         run(
             env_name=args.env_name,
             algo_name=args.algo_name,
