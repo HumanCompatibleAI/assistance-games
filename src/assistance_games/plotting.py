@@ -82,7 +82,7 @@ def plot_results_several_seeds_in_one_file(log_folder='./logs', steps_per_seed=1
     plt.show()
 
 
-def plot_multiple_runs(log_folder, window=100, expert_return=None, legend=True, title='Learning Curves'):
+def plot_multiple_runs1(log_folder, window=100, expert_return=None, legend=True, title='Learning Curves'):
     fig = plt.figure(title, figsize = (10, 4))
     paths = Path(log_folder).iterdir()
     for path in paths:
