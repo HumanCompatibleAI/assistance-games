@@ -418,7 +418,7 @@ def dqn(
     callback = EvalCallback(
         eval_env=eval_env,
         eval_freq=eval_freq,
-        n_eval_episodes=50,
+        n_eval_episodes=1000,
         log_path=log_dir,
     )
 
