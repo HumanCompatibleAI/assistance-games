@@ -154,35 +154,21 @@ class SensorModel:
         self.pomdp = pomdp
         self.sense = None
 
-    def __call__(self):
-        pass
-
 class TabularForwardSensorModel(SensorModel):
     def __init__(self, pomdp, sensor):
         super().__init__(pomdp)
         self.sensor = sensor
 
-    def __call__(self):
-        return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
-
-    def sample_sense(self, *, state=None, action=None, next_state=None):
-        self.sense = sample_distribution(self.sensor[action, next_state])
+    def sample_sense(self, state, action, next_state):
+        self.sense = sample_distribution(self.sensor[next_state])
         return self.sense
 
-    def update_belief(self, belief, action=None, sense=None):
-        if action is None:
-            action = self.pomdp.action
-        if sense is None:
-            sense = self.sense
-
-        new_belief = self.pomdp.transition_model.transition_belief(belief, action=action) * self.sensor[action, :, sense]
+    def update_belief(self, belief, action, sense):
+        T = self.pomdp.get_transition_matrix()
+        new_belief = belief @ T[:, action, :]
+        new_belief = new_belief * self.sensor[:, sense]
         new_belief /= new_belief.sum()
         return new_belief
-
-    @property
-    def space(self):
-        num_senses = self.sensor.shape[-1]
-        return Discrete(num_senses)
 
 
 class TabularBackwardSensorModel(SensorModel):
@@ -190,27 +176,16 @@ class TabularBackwardSensorModel(SensorModel):
         super().__init__(pomdp)
         self.back_sensor = back_sensor
 
-    def __call__(self):
-        return self.sample_sense(state=self.pomdp.prev_state, action=self.pomdp.action, next_state=self.pomdp.state)
-
-    def sample_sense(self, *, state=None, action=None, next_state=None):
+    def sample_sense(self, *, state, action, next_state):
         self.sense = sample_distribution(self.back_sensor[action, state])
         return self.sense
 
     def update_belief(self, belief, action=None, sense=None):
-        if action is None:
-            action = self.pomdp.action
-        if sense is None:
-            sense = self.sense
-
-        new_belief = self.pomdp.transition_model.transition_belief(belief * self.back_sensor[action, :, sense], action=action)
+        T = self.pomdp.get_transition_matrix()
+        new_belief = belief * self.back_sensor[action, :, sense]
+        new_belief = new_belief @ T[:, action, :]
         new_belief /= new_belief.sum()
         return new_belief
-
-    @property
-    def space(self):
-        num_senses = self.back_sensor.shape[-1]
-        return Discrete(num_senses)
 
 
 ### Reward models

@@ -86,6 +86,18 @@ class POMDP(gym.Env):
     def observation_space(self):
         return self.observation_model.space
 
+    def get_num_states(self):
+        return self.state_space.n
+
+    def get_num_actions(self):
+        return self.action_space.n
+
+    def get_transition_matrix(self):
+        return self.transition_model.T
+
+    def get_reward_matrix(self):
+        return self.reward_model.R
+
 
 class AssistanceGame:
     def __init__(

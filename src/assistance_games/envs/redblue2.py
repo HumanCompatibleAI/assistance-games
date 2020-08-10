@@ -3,9 +3,9 @@ import numpy as np
 
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
-from assistance_games.core.core2 import AssistancePOMDP, UniformDiscreteDistribution, KroneckerDistribution
+from assistance_games.core.core2 import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
 
-class RedBlue2(AssistancePOMDP):
+class RedBlue2(AssistancePOMDPWithMatrixSupport):
     """Red-blue problem. Fully observable assistance POMDP.
 
     A state / observation is a Numpy array of length 2, encoding the human's state followed by the robot's state.
@@ -20,12 +20,29 @@ class RedBlue2(AssistancePOMDP):
             observation_space=Box(low=np.array([0, 0, 0]), high=np.array([3, 2, 1])),
             action_space=Discrete(3),
             default_aH=0,
-            default_aR=0
+            default_aR=0,
+            deterministic=True,
+            fully_observable=True
         )
+        self.nS = 12  # 4 human locations, 3 robot locations
+        self.nAH = 2
+        self.nAR = 3
+        self.nOR = self.nS  # Fully observable
         self.viewer = None
+
+    def state_to_index(self, state):
+        h, r = state
+        return h * 3 + r
+
+    def index_to_state(self, num):
+        return (num // 3), (num % 3)
 
     def encode_obs(self, obs, prev_aH):
         return np.array(obs + [prev_aH])
+
+    def decode_obs(self, encoded_obs):
+        h, r, prev_aH = encoded_obs
+        return (h, r), prev_aH
 
     def get_transition_distribution(self, state, aH, aR):
         h, r = state
@@ -60,6 +77,11 @@ class RedBlue2(AssistancePOMDP):
 
     def is_terminal(self, state):
         return False
+
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+        return super().close()
 
     def render(self, state, theta, mode='human'):
         human_grid_pos = [(1, -1), (1, 0), (0, 0), (2, 0)]

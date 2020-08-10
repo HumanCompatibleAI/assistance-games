@@ -13,7 +13,7 @@ from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
-from assistance_games.core.core2 import ReducedAssistancePOMDP
+from assistance_games.core.core2 import ReducedAssistancePOMDP, ReducedAssistancePOMDPWithMatrices, ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices
 
 def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
     if num_episodes == -1:
@@ -73,7 +73,15 @@ def run(
         log_dir = None
 
     def make_env2_fn(cls):
-        return lambda *args, **kwargs: ReducedAssistancePOMDP(cls())
+        def helper(*args, **kwargs):
+            apomdp = cls()
+            if algo_name not in ('exact', 'pbvi'):
+                return ReducedAssistancePOMDP(apomdp)
+            elif apomdp.deterministic and apomdp.fully_observable:
+                return ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices(apomdp)
+            else:
+                return ReducedAssistancePOMDPWithMatrices(apomdp)
+        return helper
 
     env_fns = {
         'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 import gym
 import numpy as np
+from assistance_games.core.models import TabularForwardSensorModel
+from assistance_games.utils import dict_to_sparse
 
 
 class POMDP(gym.Env):
@@ -60,9 +62,33 @@ class POMDP(gym.Env):
 
         return ob, reward, done, info
 
+    # Methods required for value iteration
+    def get_num_states(self):
+        raise NotImplementedError
+
+    def get_num_actions(self):
+        raise NotImplementedError
+
+    def get_transition_matrix(self):
+        """Returns the transition matrix T (Numpy array or sparse matrix).
+
+        T[s1, a, s2] is the probability of transition to s2 when taking action a in s1.
+        """
+        raise NotImplementedError
+
+    def get_reward_matrix(self):
+        """Returns the reward model R (Numpy array or sparse matrix).
+
+        R[s1, a, s2] is the reward for transitioning to s2 when taking action a in s1.
+        """
+        raise NotImplementedError
+
 
 class AssistancePOMDP(ABC):
-    def __init__(self, discount, horizon, theta_dist, init_state_dist, observation_space=None, action_space=None, default_aH=None, default_aR=None):
+    def __init__(self, discount, horizon, theta_dist, init_state_dist,
+                 observation_space=None, action_space=None,
+                 default_aH=None, default_aR=None,
+                 deterministic=False, fully_observable=False):
         self.discount = discount
         self.horizon = horizon
         self.theta_distribution = theta_dist
@@ -71,6 +97,8 @@ class AssistancePOMDP(ABC):
         self.action_space = action_space
         self.default_aH = default_aH
         self.default_aR = default_aR
+        self.deterministic = deterministic
+        self.fully_observable = fully_observable
     
     def get_obs_human(self, state):
         return state
@@ -100,6 +128,62 @@ class AssistancePOMDP(ABC):
     @abstractmethod
     def render(self, state, theta, mode='human'):
         pass
+
+    def close(self):
+        pass
+
+
+class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.thetas = list(self.theta_distribution.support())
+
+    def index_to_state(self, num):
+        return num
+
+    def state_to_index(self, state):
+        return state
+
+    def index_to_human_action(self, num):
+        return num
+
+    def human_action_to_index(self, aH):
+        return aH
+
+    def index_to_robot_action(self, num):
+        return num
+
+    def robot_action_to_index(self, aR):
+        return aR
+
+    def index_to_robot_obs(self, num):
+        # Assume full observability by default
+        return self.index_to_state(num)
+
+    def robot_obs_to_index(self, oR):
+        # Assume full observability by default
+        return self.state_to_index(oR)
+
+    def enumerate_transitions(self):
+        """Return a sequence of all possible (s, aH, aR, s', theta, r, p) transitions.
+
+        Sequence can contain elements with p = 0, and must contain all transitions with p > 0.
+        """
+        for theta in range(len(self.thetas)):
+            theta_real = self.thetas[theta]
+            for s in range(self.nS):
+                s_real = self.index_to_state(s)
+                for aH in range(self.nAH):
+                    aH_real = self.index_to_human_action(aH)
+                    for aR in range(self.nAR):
+                        aR_real = self.index_to_robot_action(aR)
+
+                        t = self.get_transition_distribution(s_real, aH_real, aR_real)
+                        for s2_real in t.support():
+                            p = t.get_probability(s2_real)
+                            r = self.get_reward(s_real, aH_real, aR_real, s2_real, theta_real)
+                            s2 = self.state_to_index(s2_real)
+                            yield (s, aH, aR, s2, theta, r, p)
 
 
 class ReducedAssistancePOMDP(POMDP):
@@ -135,6 +219,149 @@ class ReducedAssistancePOMDP(POMDP):
         s, next_aH, prev_aH, theta = self.state
         self.apomdp.render(s, theta, mode=mode)
 
+    def close(self):
+        self.apomdp.close()
+
+
+class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
+    """Creates matrices required to run value iteration based methods.
+
+    This requires states and actions to be indices, and so it assumes that the
+    underlying Assistance POMDP provides methods to do this conversion. In
+    addition, overrides step and reset to convert numeric states and actions
+    (which the solver assumes) into structured versions (which the underlying
+    environment assumes).
+    """
+    def __init__(self, apomdp):
+        assert hasattr(apomdp, 'nS') and hasattr(apomdp, 'nOR') and hasattr(apomdp, 'nAH') and hasattr(apomdp, 'nAR')
+        super().__init__(apomdp)
+        self._create_matrices()
+
+    def _create_matrices(self):
+        self.nS = self.apomdp.nS * self.apomdp.nAH * self.apomdp.nAH * len(self.apomdp.thetas)
+        self.nA = self.apomdp.nAR
+        self.nO = self.apomdp.nOR * self.apomdp.nAH
+
+        T_dict, R_dict, O_dict = {}, {}, {}
+        for s, aH, aR, s2, theta, r, p in self.apomdp.enumerate_transitions():
+            s_real = self.apomdp.index_to_state(s)
+            aH_real = self.apomdp.index_to_human_action(aH)
+            aR_real = self.apomdp.index_to_robot_action(aR)
+            s2_real = self.apomdp.index_to_state(s2)
+            theta_real = self.apomdp.thetas[theta]
+
+            for prev_aH in range(self.apomdp.nAH):
+                new_s = self.indexify_state(s, aH, prev_aH, theta)
+                obsR_real = self.apomdp.get_obs_robot(s_real)
+                obsR = self.apomdp.robot_obs_to_index(obsR_real)
+                new_obs = self.indexify_obs(obsR, prev_aH)
+                O_dict[new_s, new_obs] = 1.0
+
+                obsH_real = self.apomdp.get_obs_human(s2_real)
+                policy = self.apomdp.get_human_action_distribution(obsH_real, aR_real, theta_real)
+                for next_aH_real in policy.support():
+                    p_next_aH = policy.get_probability(next_aH_real)
+                    next_aH = self.apomdp.human_action_to_index(next_aH_real)
+
+                    new_s2 = self.indexify_state(s2, next_aH, aH, theta)
+                    T_dict[new_s, aR, new_s2] = p * p_next_aH
+                    R_dict[new_s, aR, new_s2] = r
+
+        self._T = dict_to_sparse(T_dict, (self.nS, self.nA, self.nS))
+        self._R = dict_to_sparse(R_dict, (self.nS, self.nA, self.nS))
+        self._O = dict_to_sparse(O_dict, (self.nS, self.nO))
+        self.sensor_model = TabularForwardSensorModel(self, self._O)
+
+    def indexify_state(self, s, next_aH, prev_aH, theta):
+        result = theta
+        result = result * self.apomdp.nS + s
+        result = result * self.apomdp.nAH + next_aH
+        result = result * self.apomdp.nAH + prev_aH
+        return result
+
+    def deindexify_state(self, num):
+        num, prev_aH = (num // self.apomdp.nAH), (num % self.apomdp.nAH)
+        num, next_aH = (num // self.apomdp.nAH), (num % self.apomdp.nAH)
+        theta, s = (num // self.apomdp.nS), (num % self.apomdp.nS)
+        return s, next_aH, prev_aH, theta
+
+    def numpy_initial_state_distribution(self):
+        dist = np.zeros(self.nS)
+        dist_real = self.initial_state_distribution
+        theta_map = {theta_real:i for i, theta_real in enumerate(self.apomdp.thetas)}
+        for s_tuple in dist_real.support():
+            prob = self.initial_state_distribution.get_probability(s_tuple)
+            s_real, next_aH_real, prev_aH_real, theta_real = s_tuple
+            s = self.apomdp.state_to_index(s_real)
+            next_aH = self.apomdp.human_action_to_index(next_aH_real)
+            prev_aH = self.apomdp.human_action_to_index(prev_aH_real)
+            theta = theta_map[theta_real]
+            state_num = self.indexify_state(s, next_aH, prev_aH, theta)
+            dist[state_num] = prob
+        return dist
+
+    def indexify_obs(self, oR, prev_aH):
+        return oR * self.apomdp.nAH + prev_aH
+
+    def deindexify_obs(self, num):
+        return (num // self.apomdp.nAH), (num % self.apomdp.nAH)
+
+    def get_num_states(self):
+        return self.nS
+
+    def get_num_actions(self):
+        return self.nA
+
+    def get_transition_matrix(self):
+        return self._T
+
+    def get_reward_matrix(self):
+        return self._R
+
+    def reset(self):
+        obs_encoded = super().reset()
+        oR_real, prev_aH_real = self.apomdp.decode_obs(obs_encoded)
+        oR = self.apomdp.robot_obs_to_index(oR_real)
+        prev_aH = self.apomdp.human_action_to_index(prev_aH_real)
+        obs = self.indexify_obs(oR, prev_aH)
+        return obs
+
+    def step(self, action):
+        action_real = self.apomdp.index_to_robot_action(action)
+        obs_encoded, reward, done, info =  super().step(action_real)
+        oR_real, prev_aH_real = self.apomdp.decode_obs(obs_encoded)
+        oR = self.apomdp.robot_obs_to_index(oR_real)
+        prev_aH = self.apomdp.human_action_to_index(prev_aH_real)
+        obs = self.indexify_obs(oR, prev_aH)
+        return obs, reward, done, info
+
+
+class ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices(ReducedAssistancePOMDPWithMatrices):
+    """When the underlying APOMDP is deterministic and fully observable, the
+    only uncertainty the robot has is in what the human will do (which depends
+    on the unknown theta). So, we can make it so that the observation space only
+    includes the previous human action, making solvers much more efficient.
+    """
+    def __init__(self, apomdp):
+        super().__init__(apomdp)
+        # IMPORTANT: Depends on implementation details (TODO write more)
+        self.nO = self.apomdp.nAH
+        obs_matrix = np.zeros((len(self.apomdp.thetas), self.apomdp.nS, self.apomdp.nAH, self.apomdp.nAH, self.nO))
+        for o in range(self.nO):
+            obs_matrix[:,:,:,o,o] = 1.0
+        self._O = obs_matrix.reshape((self.nS, self.nO))
+        self.sensor_model = TabularForwardSensorModel(self, self._O)
+
+    def reset(self):
+        obs = super().reset()
+        oR, prev_aH = self.deindexify_obs(obs)
+        return prev_aH
+
+    def step(self, action):
+        obs, reward, done, info = super().step(action)
+        oR, prev_aH = self.deindexify_obs(obs)
+        return prev_aH, reward, done, info
+
 
 class Distribution(ABC):
     @abstractmethod
@@ -168,11 +395,10 @@ class KroneckerDistribution(Distribution):
         self.x = x
 
     def support(self):
-        yield x
+        yield self.x
 
     def get_probability(self, x):
-        assert x == self.x
-        return 1.0
+        return 1.0 if x == self.x else 0.0
 
     def sample(self):
         return self.x
@@ -187,7 +413,7 @@ class DictionaryDistribution(Distribution):
             yield x
 
     def get_probability(self, x):
-        return self.x_to_prob_dict[x]
+        return self.x_to_prob_dict.get(x, 0.0)
 
 
 class UniformDiscreteDistribution(Distribution):
@@ -199,7 +425,8 @@ class UniformDiscreteDistribution(Distribution):
             yield x
 
     def get_probability(self, x):
-        assert x in self.options
+        if x not in self.options:
+            return 0.0
         return 1.0 / len(self.options)
 
     def sample(self):
@@ -232,8 +459,8 @@ class ExtendedTransitionDistribution(Distribution):
 
     def get_probability(self, x):
         next_state, next_aH, prev_aH, theta = x
-        assert prev_aH == self.prev_aH
-        assert theta == self.theta
+        if prev_aH != self.prev_aH or theta != self.theta:
+            return 0.0
         obsH = self.apomdp.get_obs_human(next_state)
         policy = self.apomdp.get_human_action_distribution(obsH, self.prev_aR, self.theta)
         return self.trans_dist.get_probability(next_state) * policy.get_probability(next_aH)
@@ -244,7 +471,7 @@ class ExtendedTransitionDistribution(Distribution):
         policy = self.apomdp.get_human_action_distribution(obsH, self.prev_aR, self.theta)
         next_aH = policy.sample()
         return next_state, next_aH, self.prev_aH, self.theta
-        
+
 
 class ExtendedInitialStateDistribution(Distribution):
     def __init__(self, apomdp):
@@ -261,7 +488,8 @@ class ExtendedInitialStateDistribution(Distribution):
 
     def get_probability(self, x):
         state, next_aH, prev_aH, theta = x
-        assert prev_aH == self.apomdp.default_aH
+        if prev_aH != self.apomdp.default_aH:
+            return 0.0
         obsH = self.apomdp.get_obs_human(state)
         policy = self.apomdp.get_human_action_distribution(obsH, self.apomdp.default_aR, theta)
         result = policy.get_probability(next_aH)
@@ -277,4 +505,3 @@ class ExtendedInitialStateDistribution(Distribution):
         next_aH = policy.sample()
         prev_aH = self.apomdp.default_aH
         return state, next_aH, prev_aH, theta
-
