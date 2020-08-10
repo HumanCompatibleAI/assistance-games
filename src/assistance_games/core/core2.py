@@ -41,24 +41,15 @@ class POMDP(gym.Env):
         return self.get_obs(self.state)
 
     def step(self, action):
-        info = {}
-
-        # Update state
         prev_state = self.state
         next_state = self.sample_transition(prev_state, action)
         self.state = next_state
         self.t += 1
 
-        reward = self.get_reward(prev_state, action, next_state)
-
-        # Update sensor
-        # self.sense = self.sample_sense(prev_state, action, next_state)
-
-        # Update observation
         ob = self.get_obs(next_state)
-
-        # Check termination
+        reward = self.get_reward(prev_state, action, next_state)
         done = self.is_terminal(next_state) or self.t >= self.horizon
+        info = {}
 
         return ob, reward, done, info
 
@@ -101,28 +92,38 @@ class AssistancePOMDP(ABC):
         self.fully_observable = fully_observable
     
     def get_obs_human(self, state):
+        # Assume full observability by default
         return state
 
     def get_obs_robot(self, state):
+        # Assume full observability by default
         return state
 
     def encode_obs(self, obs, prev_aH):
+        """Once converted to a POMDP, observations are tuples (obs,
+        prev_aH). This method allows postprocessing, e.g. to make it suitable
+        for input to a policy net.
+        """
         return (obs, prev_aH)
 
     @abstractmethod
     def get_transition_distribution(self, state, aH, aR):
+        """Returns the distribution T( . | state, aH, aR)."""
         pass
 
     @abstractmethod
     def get_reward(self, state, aH, aR, next_state, theta):
+        """Returns the reward for transition (state, aH, aR, next_state)."""
         pass
 
     @abstractmethod
     def get_human_action_distribution(self, obsH, prev_aR, theta):
+        """Returns the human policy PiH( . | obsH, prev_aR, theta)."""
         pass
 
     @abstractmethod
     def is_terminal(self, state):
+        """Returns True if state is terminal, False otherwise."""
         pass
 
     @abstractmethod
@@ -134,14 +135,24 @@ class AssistancePOMDP(ABC):
 
 
 class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
+    """When extending this class, in addition to implementing the methods here
+    and in AssistancePOMDP, make sure to set self.nS, self.nAH, self.nAR, and
+    self.oR.
+
+    The main additions are the ability to convert between whatever state
+    representation is used in the underlying environment, and numerical IDs for
+    states (0, 1, ... nS - 1). Similarly for actions and robot observations.
+    """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.thetas = list(self.theta_distribution.support())
 
     def index_to_state(self, num):
+        """Convert numeric state to underlying env state."""
         return num
 
     def state_to_index(self, state):
+        """Convert underlying env state to numeric state."""
         return state
 
     def index_to_human_action(self, num):
@@ -165,9 +176,13 @@ class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
         return self.state_to_index(oR)
 
     def enumerate_transitions(self):
-        """Return a sequence of all possible (s, aH, aR, s', theta, r, p) transitions.
+        """Return a sequence of (s, aH, aR, s', theta, r, p) transitions.
 
-        Sequence can contain elements with p = 0, and must contain all transitions with p > 0.
+        Sequence can contain elements with p = 0, and must contain all
+        transitions with p > 0.
+
+        When subclassing this class, you do not need to override this method,
+        but you may wish to do so for improved efficiency.
         """
         for theta in range(len(self.thetas)):
             theta_real = self.thetas[theta]

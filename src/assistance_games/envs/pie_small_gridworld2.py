@@ -165,6 +165,11 @@ class SmallPieGridworld2(AssistancePOMDP):
             np.array([obs['prev_h_action']]),
         ])
 
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+        super().close()
+
     def render(self, state, theta, mode='human'):
         print(state)
 
