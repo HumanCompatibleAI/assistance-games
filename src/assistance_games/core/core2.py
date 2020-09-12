@@ -137,15 +137,29 @@ class AssistancePOMDP(ABC):
 class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
     """When extending this class, in addition to implementing the methods here
     and in AssistancePOMDP, make sure to set self.nS, self.nAH, self.nAR, and
-    self.oR.
+    self.nOR.
 
     The main additions are the ability to convert between whatever state
     representation is used in the underlying environment, and numerical IDs for
     states (0, 1, ... nS - 1). Similarly for actions and robot observations.
+
+    In addition, it is possible to automatically compute a human
+    policy using value iteration if the environment is fully
+    observable. This can be done by specifying a dictionary for
+    human_policy_type with keys 'H' and 'R', specifying the models for
+    each. Currently, H must be 'optimal', and R can be either 'random'
+    or 'optimal'. The key 'num_iters' is optional, if present it
+    specifies the number of iterations of value iteration to run
+    (default value 30). When H is 'noisy', optionally 'beta' may be
+    provided (default value 1).
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, human_policy_type=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.thetas = list(self.theta_distribution.support())
+        self.theta_map = {theta:i for i, theta in enumerate(self.thetas)}
+        if human_policy_type is not None:
+            print('Computing human policy using value iteration')
+            self._compute_human_policy(human_policy_type)
 
     def index_to_state(self, num):
         """Convert numeric state to underlying env state."""
@@ -167,13 +181,59 @@ class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
     def robot_action_to_index(self, aR):
         return aR
 
+    # These should be overridden if the environment is not fully observable
     def index_to_robot_obs(self, num):
-        # Assume full observability by default
+        assert self.fully_observable
         return self.index_to_state(num)
 
     def robot_obs_to_index(self, oR):
-        # Assume full observability by default
+        assert self.fully_observable
         return self.state_to_index(oR)
+
+    def get_human_action_distribution(self, obsH, prev_aR, theta):
+        new_s = self.theta_map[theta] * self.nS + self.state_to_index(obsH)
+        probs = self.human_policy[new_s, :]
+        return DiscreteDistribution(dict(zip(range(self.nAH), probs)))
+
+    def _make_T_and_R_matrices(self):
+        # Wasteful, duplicates theta -- could save on space by having
+        # T and R with dimensions [nThetas, nS, nAH, nAR, nS] and
+        # modifying the value iteration algorithms to handle this
+        assert self.fully_observable
+        new_nS = len(self.thetas) * self.nS
+        T, R = {}, {}
+        for s, aH, aR, s2, theta, r, p in self.enumerate_transitions():
+            new_s = theta * self.nS + s
+            new_s2 = theta * self.nS + s2
+            T[new_s, aH, aR, new_s2] = p
+            R[new_s, aH, aR, new_s2] = r
+        T = dict_to_sparse(T, (new_nS, self.nAH, self.nAR, new_nS))
+        R = dict_to_sparse(R, (new_nS, self.nAH, self.nAR, new_nS))
+        return T, R
+
+    def _compute_human_policy(self, type):
+        """See class docstring for the meaning of `type`."""
+        assert self.fully_observable
+        # TODO: This seems wasteful, we already make matrices in the
+        # reduction, presumably we could reuse those
+        T, R = self._make_T_and_R_matrices()
+        num_iters = type.get('num_iters', 30)
+        assert type['R'] in ['random', 'optimal']
+        if type['R'] == 'random':
+            # Human assumes robot acts randomly
+            T = T.mean(axis=2)
+            R = R.mean(axis=2)
+            self.human_policy = value_iteration(T, R, discount=self.discount, num_iters=num_iters)
+        else:
+            # Human assumes robot knows reward and acts optimally, so
+            # treat robot action space as part of human action space
+            # to compute a joint policy
+            nS, nAH, nAR, _ = T.shape
+            T = T.reshape((nS, nAH * nAR, nS))
+            R = R.reshape((nS, nAH * nAR, nS))
+            joint_policy = value_iteration(T, R, discount=self.discount, num_iters=num_iters)
+            # Human policy just marginalizes out the robot action
+            self.human_policy = joint_policy.reshape((nS, nAH, nAR)).sum(axis=2)
 
     def enumerate_transitions(self):
         """Return a sequence of (s, aH, aR, s', theta, r, p) transitions.
@@ -250,6 +310,7 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
     def __init__(self, apomdp):
         assert hasattr(apomdp, 'nS') and hasattr(apomdp, 'nOR') and hasattr(apomdp, 'nAH') and hasattr(apomdp, 'nAR')
         super().__init__(apomdp)
+        print('Creating T, R and O matrices')
         self._create_matrices()
 
     def _create_matrices(self):
@@ -303,14 +364,13 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
     def numpy_initial_state_distribution(self):
         dist = np.zeros(self.nS)
         dist_real = self.initial_state_distribution
-        theta_map = {theta_real:i for i, theta_real in enumerate(self.apomdp.thetas)}
         for s_tuple in dist_real.support():
             prob = self.initial_state_distribution.get_probability(s_tuple)
             s_real, next_aH_real, prev_aH_real, theta_real = s_tuple
             s = self.apomdp.state_to_index(s_real)
             next_aH = self.apomdp.human_action_to_index(next_aH_real)
             prev_aH = self.apomdp.human_action_to_index(prev_aH_real)
-            theta = theta_map[theta_real]
+            theta = self.apomdp.theta_map[theta_real]
             state_num = self.indexify_state(s, next_aH, prev_aH, theta)
             dist[state_num] = prob
         return dist
@@ -359,7 +419,6 @@ class ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices(ReducedAssi
     """
     def __init__(self, apomdp):
         super().__init__(apomdp)
-        # IMPORTANT: Depends on implementation details (TODO write more)
         self.nO = self.apomdp.nAH
         obs_matrix = np.zeros((len(self.apomdp.thetas), self.apomdp.nS, self.apomdp.nAH, self.apomdp.nAH, self.nO))
         for o in range(self.nO):
@@ -431,21 +490,28 @@ class DictionaryDistribution(Distribution):
         return self.x_to_prob_dict.get(x, 0.0)
 
 
-class UniformDiscreteDistribution(Distribution):
-    def __init__(self, options):
-        self.options = list(options)
+class DiscreteDistribution(Distribution):
+    def __init__(self, option_prob_map):
+        self.option_prob_map = option_prob_map
 
     def support(self):
-        for x in self.options:
-            yield x
+        for x, p in self.option_prob_map.items():
+            if p > 0:
+                yield x
 
-    def get_probability(self, x):
-        if x not in self.options:
-            return 0.0
-        return 1.0 / len(self.options)
+    def get_probability(self, option):
+        return self.option_prob_map.get(option, 0.0)
 
     def sample(self):
-        return np.random.choice(self.options)
+        options, probs = zip(*self.option_prob_map.items())
+        idx = np.random.choice(len(options), p=probs)
+        return options[idx]
+
+
+class UniformDiscreteDistribution(DiscreteDistribution):
+    def __init__(self, options):
+        p = 1.0 / len(options)
+        super().__init__({ option:p for option in options })
 
 
 class UniformContinuousDistribution(ContinuousDistribution):
@@ -520,3 +586,16 @@ class ExtendedInitialStateDistribution(Distribution):
         next_aH = policy.sample()
         prev_aH = self.apomdp.default_aH
         return state, next_aH, prev_aH, theta
+
+
+def value_iteration(T, R, discount=0.9, num_iters=30, **kwargs):
+    nS, nA, _ = T.shape
+    Q = np.empty((nS, nA))
+    V = np.zeros((nS,))
+
+    for _ in range(num_iters):
+        Q = (T*R).sum(axis=-1) + np.tensordot(T, discount * V, axes=(2, 0))
+        V = np.max(Q, axis=1)
+
+    policy = np.eye(nA)[Q.argmax(axis=1)]
+    return policy

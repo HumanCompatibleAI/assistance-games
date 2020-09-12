@@ -1,4 +1,4 @@
-"""Some small POMDP environments.
+"""[DEPRECATED] Some small POMDP environments.
 """
 from gym.spaces import Discrete
 import numpy as np
@@ -90,8 +90,9 @@ class FourThreeMaze(POMDP):
         else:
             pomdp = read_pomdp(get_asset('pomdps/four-three.pomdp'))
         self.__dict__ = pomdp.__dict__
-        if horizon is not None:
-            self.horizon = horizon
+        if horizon is None:
+            horizon = 20
+        self.horizon = horizon
         self.viewer = None
 
     def render(self, mode='human'):
@@ -134,8 +135,8 @@ class FourThreeMaze(POMDP):
             bar.set_color(0.7, 0.3, 0.3)
             self.viewer.add_onetime(bar)
 
-        for state, ratio in enumerate(self.belief):
-            add_bar(state, ratio)
+        # for state, ratio in enumerate(self.belief):
+        #     add_bar(state, ratio)
         
         self.agent_transform.set_translation(*self.coords_from_state(self.state))
 

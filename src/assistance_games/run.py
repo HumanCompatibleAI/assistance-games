@@ -84,8 +84,8 @@ def run(
         return helper
 
     env_fns = {
-        'tiger' : (lambda : read_pomdp(get_asset('pomdps/tiger.pomdp'))),
-        'fourthree' : envs.FourThreeMaze,
+        # 'tiger' : (lambda *args, **kwargs: read_pomdp(get_asset('pomdps/tiger.pomdp'))),
+        # 'fourthree' : envs.FourThreeMaze,
         'redblue' : envs.RedBlueAssistanceProblem,
         'wardrobe' : envs.WardrobeAssistanceProblem,
         'mealgraph': envs.MealChoiceTimeDependentProblem,
@@ -96,6 +96,7 @@ def run(
         'pie' : envs.PieGridworldAssistanceProblem,
         'pie_small' : envs.SmallPieGridworldAssistanceProblem,
         'redblue2' : make_env2_fn(envs.RedBlue2),
+        'wardrobe2' : make_env2_fn(envs.Wardrobe2),
         'pie_small2' : make_env2_fn(envs.SmallPieGridworld2),
     }
     algos = {
@@ -124,7 +125,7 @@ def run(
     else:
         env = env_fns[env_name](use_belief_space=True)
 
-    print('\n seed {}'.format(seed))
+    print('\n Running algorithm {} with seed {}'.format(algo_name, seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
     run_environment(env, policy, dt=0.5, num_episodes=num_episodes, render=render)

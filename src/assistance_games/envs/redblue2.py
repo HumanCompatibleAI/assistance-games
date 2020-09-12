@@ -11,6 +11,12 @@ class RedBlue2(AssistancePOMDPWithMatrixSupport):
     A state / observation is a Numpy array of length 2, encoding the human's state followed by the robot's state.
     """
     def __init__(self):
+        self.nS = 12  # 4 human locations, 3 robot locations
+        self.nAH = 2
+        self.nAR = 3
+        self.nOR = self.nS  # Fully observable
+        self.viewer = None
+
         super().__init__(
             discount=0.9,
             horizon=4,
@@ -24,11 +30,6 @@ class RedBlue2(AssistancePOMDPWithMatrixSupport):
             deterministic=True,
             fully_observable=True
         )
-        self.nS = 12  # 4 human locations, 3 robot locations
-        self.nAH = 2
-        self.nAR = 3
-        self.nOR = self.nS  # Fully observable
-        self.viewer = None
 
     def state_to_index(self, state):
         h, r = state

@@ -4,7 +4,7 @@ from gym.spaces import Discrete, Box
 import numpy as np
 
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset
+from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
 from assistance_games.core.core2 import AssistancePOMDP, UniformContinuousDistribution, KroneckerDistribution
 
 
@@ -73,18 +73,11 @@ class SmallPieGridworld2(AssistancePOMDP):
 
 
     def update_pos(self, pos, act):
-        dirs = [
-            (0, 0),
-            (1, 0),
-            (0, 1),
-            (-1, 0),
-            (0, -1),
-        ]
-        if act >= len(dirs):
+        if act >= len(MOVEMENT_ACTIONS):
             return pos
 
         x, y = pos
-        dx, dy = dirs[act]
+        dx, dy = MOVEMENT_ACTIONS[act]
         new_x = np.clip(x + dx, 0, self.width - 1)
         new_y = np.clip(y + dy, 0, self.height - 1)
 

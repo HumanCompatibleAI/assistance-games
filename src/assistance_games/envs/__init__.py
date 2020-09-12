@@ -10,3 +10,4 @@ from assistance_games.envs.redblue import *
 from assistance_games.envs.redblue2 import RedBlue2
 from assistance_games.envs.small_pomdps import *
 from assistance_games.envs.wardrobe import *
+from assistance_games.envs.wardrobe2 import Wardrobe2
