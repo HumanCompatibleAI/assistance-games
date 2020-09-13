@@ -127,7 +127,7 @@ class AssistancePOMDP(ABC):
         pass
 
     @abstractmethod
-    def render(self, state, theta, mode='human'):
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
         pass
 
     def close(self):
@@ -290,9 +290,9 @@ class ReducedAssistancePOMDP(POMDP):
         s, next_aH, prev_aH, theta = state
         return self.apomdp.is_terminal(s)
 
-    def render(self, mode='human'):
+    def render(self, prev_action=None, mode='human'):
         s, next_aH, prev_aH, theta = self.state
-        self.apomdp.render(s, theta, mode=mode)
+        self.apomdp.render(s, prev_aH, prev_action, theta, mode=mode)
 
     def close(self):
         self.apomdp.close()
@@ -410,12 +410,17 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
         obs = self.indexify_obs(oR, prev_aH)
         return obs, reward, done, info
 
+    def render(self, prev_action=None, mode='human'):
+        if prev_action != None:
+            prev_action = self.apomdp.index_to_robot_action(prev_action)
+        super().render(prev_action=prev_action, mode=mode)
 
-class ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices(ReducedAssistancePOMDPWithMatrices):
-    """When the underlying APOMDP is deterministic and fully observable, the
-    only uncertainty the robot has is in what the human will do (which depends
-    on the unknown theta). So, we can make it so that the observation space only
-    includes the previous human action, making solvers much more efficient.
+
+class ReducedFullyObservableAssistancePOMDPWithMatrices(ReducedAssistancePOMDPWithMatrices):
+    """When the underlying APOMDP is fully observable, the only uncertainty the
+    robot has is in what the human will do (which depends on the unknown
+    theta). So, we can make it so that the observation space only includes the
+    previous human action, making solvers much more efficient.
     """
     def __init__(self, apomdp):
         super().__init__(apomdp)

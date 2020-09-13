@@ -163,7 +163,7 @@ class SmallPieGridworld2(AssistancePOMDP):
             self.viewer.close()
         super().close()
 
-    def render(self, state, theta, mode='human'):
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
         print(state)
 
         width = self.width

@@ -167,7 +167,7 @@ class Wardrobe2(AssistancePOMDPWithMatrixSupport):
         return (0 <= x - wardrobe_x < self.wardrobe_size and
                 0 <= y - wardrobe_y < self.wardrobe_size)
 
-    def render(self, state, theta, mode='human'):
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
         size = self.size
         wardrobe_size = self.wardrobe_size
 

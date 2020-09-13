@@ -13,19 +13,21 @@ from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
-from assistance_games.core.core2 import ReducedAssistancePOMDP, ReducedAssistancePOMDPWithMatrices, ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices
+from assistance_games.core.core2 import ReducedAssistancePOMDP, ReducedAssistancePOMDPWithMatrices, ReducedFullyObservableAssistancePOMDPWithMatrices
 
 def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
     if num_episodes == -1:
         num_episodes = int(1e6)
 
-    def render_fn():
+    def render_fn(prev_action=None):
         if render:
-            env.render(mode='human')
+            env.render(prev_action, mode='human')
             time.sleep(dt)
 
+    rewards = []
     for ep in range(num_episodes):
         print('\n starting ep {}'.format(ep))
+        total_reward = 0
         ob = env.reset()
         render_fn()
 
@@ -37,21 +39,26 @@ def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, r
                 ac = env.action_space.sample()
             else:
                 ac, state = policy.predict(ob, state)
-            old_ob = ob
             ob, re, done, _ = env.step(ac)
             print('r = {}'.format(re))
-            render_fn()
+            total_reward += re
+            render_fn(ac)
             step += 1
+        rewards.append(total_reward)
+
+    print('Undiscounted rewards: {}\nAverage undiscounted reward: {}'.format(rewards, sum(rewards) / len(rewards)))
     return None
 
 
-def get_hardcoded_policy(env, *args, **kwargs):
-    if isinstance(env, envs.PieGridworldAssistanceProblem):
+def get_hardcoded_policy(env, env_name, *args, **kwargs):
+    if env_name == 'pie':
         return envs.get_pie_hardcoded_robot_policy(env, *args, **kwargs)
-    if isinstance(env, envs.SmallPieGridworldAssistanceProblem):
+    if env_name == 'pie_small':
         return envs.get_small_pie_hardcoded_robot_policy(env, *args, **kwargs)
+    if env_name == 'mealgraph2':
+        return envs.get_meal_choice_hardcoded_robot_policy(env, *args, **kwargs)
     else:
-        raise Error("No hardcoded robot policy for this environment.")
+        raise ValueError("No hardcoded robot policy for this environment.")
 
 def run(
     env_name,
@@ -77,8 +84,8 @@ def run(
             apomdp = cls()
             if algo_name not in ('exact', 'pbvi'):
                 return ReducedAssistancePOMDP(apomdp)
-            elif apomdp.deterministic and apomdp.fully_observable:
-                return ReducedDeterministicFullyObservableAssistancePOMDPWithMatrices(apomdp)
+            elif apomdp.fully_observable:
+                return ReducedFullyObservableAssistancePOMDPWithMatrices(apomdp)
             else:
                 return ReducedAssistancePOMDPWithMatrices(apomdp)
         return helper
@@ -97,6 +104,7 @@ def run(
         'pie_small' : envs.SmallPieGridworldAssistanceProblem,
         'redblue2' : make_env2_fn(envs.RedBlue2),
         'wardrobe2' : make_env2_fn(envs.Wardrobe2),
+        'mealgraph2' : make_env2_fn(envs.MealChoice2),
         'pie_small2' : make_env2_fn(envs.SmallPieGridworld2),
     }
     algos = {
@@ -104,7 +112,7 @@ def run(
         'pbvi' : pbvi,
         'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
         'random' : lambda *args, **kwargs : None,
-        'hardcoded' : get_hardcoded_policy,
+        'hardcoded' : partial(get_hardcoded_policy, env_name=env_name),
     }
 
     algo = algos[algo_name]

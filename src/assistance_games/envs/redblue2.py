@@ -84,7 +84,7 @@ class RedBlue2(AssistancePOMDPWithMatrixSupport):
             self.viewer.close()
         return super().close()
 
-    def render(self, state, theta, mode='human'):
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
         human_grid_pos = [(1, -1), (1, 0), (0, 0), (2, 0)]
         robot_grid_pos = [(1, 0), (0, 0), (2, 0)]
 

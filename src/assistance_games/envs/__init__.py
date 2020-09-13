@@ -1,4 +1,5 @@
 from assistance_games.envs.meal_choice_graph import *
+from assistance_games.envs.meal_choice_graph2 import MealChoice2, get_meal_choice_hardcoded_robot_policy
 from assistance_games.envs.meal_drink_grid import *
 from assistance_games.envs.meal_drink_h_acts import *
 from assistance_games.envs.meal_drink_reward_queries import *

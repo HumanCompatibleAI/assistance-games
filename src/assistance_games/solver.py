@@ -81,9 +81,11 @@ def pomdp_value_iteration(
 
     beliefs = None
     alphas = [Alpha(np.zeros(nS), None)]
-    for _ in range(max_iter):
+    for i in range(max_iter):
+        print("Iteration {}/{}".format(i, max_iter))
         beliefs = expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
-        for _ in range(num_value_iter):
+        for j in range(num_value_iter):
+            # print("Value iter {}/{}".format(j, num_value_iter))
             alphas = value_backup_fn(pomdp, alphas, beliefs)
 
     return POMDPPolicy(alphas, pomdp)
