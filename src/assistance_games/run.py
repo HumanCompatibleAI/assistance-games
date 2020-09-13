@@ -21,7 +21,7 @@ def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, r
 
     def render_fn(prev_action=None):
         if render:
-            env.render(prev_action, mode='human')
+            env.render(mode='human', prev_action=prev_action)
             time.sleep(dt)
 
     rewards = []

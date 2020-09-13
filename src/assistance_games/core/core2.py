@@ -290,7 +290,7 @@ class ReducedAssistancePOMDP(POMDP):
         s, next_aH, prev_aH, theta = state
         return self.apomdp.is_terminal(s)
 
-    def render(self, prev_action=None, mode='human'):
+    def render(self, mode='human', prev_action=None):
         s, next_aH, prev_aH, theta = self.state
         self.apomdp.render(s, prev_aH, prev_action, theta, mode=mode)
 
@@ -410,10 +410,10 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
         obs = self.indexify_obs(oR, prev_aH)
         return obs, reward, done, info
 
-    def render(self, prev_action=None, mode='human'):
+    def render(self, mode='human', prev_action=None):
         if prev_action != None:
             prev_action = self.apomdp.index_to_robot_action(prev_action)
-        super().render(prev_action=prev_action, mode=mode)
+        super().render(mode=mode, prev_action=prev_action)
 
 
 class ReducedFullyObservableAssistancePOMDPWithMatrices(ReducedAssistancePOMDPWithMatrices):
