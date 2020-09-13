@@ -53,26 +53,62 @@ class POMDP(gym.Env):
 
         return ob, reward, done, info
 
-    # Methods required for value iteration
+
+class POMDPWithMatrices(POMDP):
+    """A POMDP with all the elements needed to run value iteration or PBVI."""
+    def __init__(self, T, R, O, discount, horizon, init_state_dist):
+        self.nS, self.nA, _ = T.shape
+        _, self.nO = O.shape
+        assert T.shape == (self.nS, self.nA, self.nS)
+        assert R.shape == (self.nS, self.nA, self.nS)
+        assert O.shape == (self.nS, self.nO)
+
+        observation_space = gym.spaces.Discrete(self.nO)
+        action_space = gym.spaces.Discrete(self.nA)
+        super().__init__(discount, horizon, init_state_dist, observation_space, action_space)
+
+        self._T = T
+        self._R = R
+        self._O = O
+        self.sensor_model = TabularForwardSensorModel(self, self._O)
+
+    def get_obs(self, state):
+        return DiscreteDistribution(self._O[state, :]).sample()
+
+    def get_transition_distribution(self, state, action):
+        return DiscreteDistribution(self._T[state, action, :])
+
+    def get_reward(self, state, action, next_state):
+        return self._R[state, action, next_state]
+
+    def is_terminal(self, state):
+        return False
+
     def get_num_states(self):
-        raise NotImplementedError
+        return self.nS
 
     def get_num_actions(self):
-        raise NotImplementedError
+        return self.nA
 
     def get_transition_matrix(self):
         """Returns the transition matrix T (Numpy array or sparse matrix).
 
         T[s1, a, s2] is the probability of transition to s2 when taking action a in s1.
         """
-        raise NotImplementedError
+        return self._T
 
     def get_reward_matrix(self):
         """Returns the reward model R (Numpy array or sparse matrix).
 
         R[s1, a, s2] is the reward for transitioning to s2 when taking action a in s1.
         """
-        raise NotImplementedError
+        return self._R
+
+    def numpy_initial_state_distribution(self):
+        dist = np.zeros(self.get_num_states())
+        for s in self.initial_state_distribution.support():
+            dist[s] = self.initial_state_distribution.get_probability(s)
+        return dist
 
 
 class AssistancePOMDP(ABC):
@@ -306,6 +342,9 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
     addition, overrides step and reset to convert numeric states and actions
     (which the solver assumes) into structured versions (which the underlying
     environment assumes).
+
+    Note: We could inherit from POMDPWithMatrices, but we choose to rely on duck
+    typing rather than deal with multiple inheritance.
     """
     def __init__(self, apomdp):
         assert hasattr(apomdp, 'nS') and hasattr(apomdp, 'nOR') and hasattr(apomdp, 'nAH') and hasattr(apomdp, 'nAR')
@@ -497,6 +536,9 @@ class DictionaryDistribution(Distribution):
 
 class DiscreteDistribution(Distribution):
     def __init__(self, option_prob_map):
+        if type(option_prob_map) == np.ndarray:
+            assert len(option_prob_map.shape) == 1
+            option_prob_map = dict(zip(range(len(option_prob_map)), option_prob_map))
         self.option_prob_map = option_prob_map
 
     def support(self):
