@@ -18,20 +18,20 @@ class Wardrobe2(AssistancePOMDPWithMatrixSupport):
     .......
     .     .
     .     .
-    . TT  .
-    . TT  .
+    . WW  .
+    . WW  .
     .H   R.
     .......
 
     H = Human
     R = Robot
-    T = Wardrobe
+    W = Wardrobe
 
     The human wants to move the wardrobe to one of the corners.
     To move the wardrobe, two agents need to push it at the same time
     in the same direction.
 
-    Size of the map and of the table can be chosen.
+    Size of the map and of the wardrobe can be chosen.
 
     States are namedtuples where the keys H, R, and W are mapped to
     the positions of the human, robot and wardrobe respectively.
