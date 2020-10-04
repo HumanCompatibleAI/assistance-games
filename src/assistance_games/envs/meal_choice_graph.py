@@ -76,7 +76,9 @@ class MealChoice(AssistancePOMDPWithMatrixSupport):
     def index_to_robot_action(self, num):
         return MealChoice.ROBOT_ACTIONS[num]
 
-    def encode_obs(self, obs, prev_aH):
+    def encode_obs(self, obs_dist, prev_aH):
+        # Observations are deterministic, so extract it
+        (obs,) = tuple(obs_dist.support())
         world_idx = MealChoice.WORLD_STATE_TO_INDEX[obs.world]
         prev_aH_idx = self.human_action_to_index(prev_aH)
 
@@ -84,7 +86,7 @@ class MealChoice(AssistancePOMDPWithMatrixSupport):
         result[world_idx] = 1
         result[self.num_world_states + prev_aH_idx] = 1
         result[-1] = obs.time
-        return result
+        return KroneckerDistribution(result)
 
     def decode_obs(self, encoded_obs):
         world_idx = np.argmax(encoded_obs[:self.num_world_states])

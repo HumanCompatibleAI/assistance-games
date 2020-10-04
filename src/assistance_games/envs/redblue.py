@@ -38,8 +38,10 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
     def index_to_state(self, num):
         return (num // 3), (num % 3)
 
-    def encode_obs(self, obs, prev_aH):
-        return np.array(obs + [prev_aH])
+    def encode_obs_distribution(self, obs_dist, prev_aH):
+        # Observations are deterministic, so extract it
+        (obs,) = tuple(obs_dist.support())
+        return KroneckerDistribution(np.array(obs + [prev_aH]))
 
     def decode_obs(self, encoded_obs):
         h, r, prev_aH = encoded_obs

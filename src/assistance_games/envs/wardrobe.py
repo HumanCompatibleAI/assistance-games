@@ -97,9 +97,11 @@ class Wardrobe(AssistancePOMDPWithMatrixSupport):
             W=(state_as_sequence[1], state_as_sequence[0]),
         )
 
-    def encode_obs(self, obs, prev_aH):
+    def encode_obs(self, obs_dist, prev_aH):
+        # Observations are deterministic, so extract it
+        (obs,) = tuple(obs_dist.support())
         h, r, w = obs.H, obs.R, obs.W
-        return np.array(h + r + w + (prev_aH,))
+        return KroneckerDistribution(np.array(h + r + w + (prev_aH,)))
 
     def decode_obs(self, encoded_obs):
         state = WardrobeState(

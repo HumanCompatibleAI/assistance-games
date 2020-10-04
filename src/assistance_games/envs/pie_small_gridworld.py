@@ -122,7 +122,9 @@ class SmallPieGridworld(AssistancePOMDP):
     def is_terminal(self, state):
         return state['pie'] != None
 
-    def encode_obs(self, obs, prev_aH):
+    def encode_obs(self, obs_dist, prev_aH):
+        # Observations are deterministic, so extract it
+        (obs,) = tuple(obs_dist.support())
         num_ingredients = len(self.counter_items) - 1
         def one_hot(i, n):
             return np.eye(n)[i]
@@ -149,14 +151,14 @@ class SmallPieGridworld(AssistancePOMDP):
                 ob[item_idx(item)] = 1.0
             return ob
 
-        return np.concatenate([
+        return KroneckerDistribution(np.concatenate([
             # position_ob(state['human_pos']),
             position_ob(obs['robot_pos']),
             # hand_ob(state['human_hand']),
             hand_ob(obs['robot_hand']),
             plate_ob(obs['plate']),
             np.array([obs['prev_h_action']]),
-        ])
+        ]))
 
     def close(self):
         if self.viewer is not None:
