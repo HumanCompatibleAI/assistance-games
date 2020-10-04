@@ -1,53 +1,17 @@
-from collections import Counter
 from copy import deepcopy
 from functools import partial
-
 from gym.spaces import Discrete, Box
 import numpy as np
 
-from assistance_games.core import (
-    AssistanceGame,
-    AssistanceProblem,
-    get_human_policy,
-    functional_random_policy_fn,
-    FunctionalObservationModel,
-    FunctionalTransitionModel,
-    ShapedFunctionalRewardModel,
-    SensorModel,
-    TerminationModel,
-)
-
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset
+from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
+from assistance_games.core import AssistancePOMDP, UniformContinuousDistribution, KroneckerDistribution
 
 
-class SmallPieGridworldAssistanceGame(AssistanceGame):
-    def __init__(self):
-        self.width = 5
-        self.height = 3
-
-        self.counter_items = {
-            (3, 0) : 'A',
-            (2, 0) : 'B',
-            (1, 0) : 'C',
-            (4, 1) : 'P',
-        }
-
-
-        self.recipes = [
-            ('A',),
-            ('B',),
-            ('C',)
-        ]
-
-        num_questions = len(self.recipes)
-        human_action_space = Box(0, 3, shape=())
-        robot_action_space = Discrete(6 + num_questions)
-
-        self.INTERACT = 5
-
-        state_space = None
-        self.initial_state = {
+class SmallPieGridworld(AssistancePOMDP):
+    def __init__(self, discrete=False):
+        assert not discrete, "Discretized version not yet implemented"
+        initial_state = {
             'human_pos' : (0, 2),
             'human_hand' : '',
             'robot_pos' : (0, 0),
@@ -57,27 +21,38 @@ class SmallPieGridworldAssistanceGame(AssistanceGame):
             'prev_h_action': 0,
             'prev_r_action': 0,
         }
-
-        horizon = 20
-        discount = 0.99
-
-        rewards_dist = {
-            ('A',) : (0, 0), # TODO: Eventually we want (1, 3) here
-            ('B',) : (0, 2),
-            ('C',) : (0, 2)
+        self.width = 5
+        self.height = 3
+        self.recipes = [
+            ('A',),
+            ('B',),
+            ('C',)
+        ]
+        self.counter_items = {
+            (3, 0) : 'A',
+            (2, 0) : 'B',
+            (1, 0) : 'C',
+            (4, 1) : 'P',
         }
-
+        num_ingredients = len(self.counter_items) - 1
+        num_dims = self.width + self.height + 2 * num_ingredients + 1
+        low = np.zeros(num_dims)
+        high = np.ones(num_dims)
+        high[-1] = 3.0
         super().__init__(
-            state_space=state_space,
-            human_action_space=human_action_space,
-            robot_action_space=robot_action_space,
-            transition=self.transition_fn,
-            reward_distribution=rewards_dist,
-            horizon=horizon,
-            discount=discount,
+            discount=0.99,
+            horizon=20,
+            theta_dist=UniformContinuousDistribution([1, 0, 0], [3, 2, 2]),
+            init_state_dist=KroneckerDistribution(initial_state),
+            observation_space=Box(low=low, high=high),
+            action_space=Discrete(9),
+            default_aH=0,
+            default_aR=0
         )
+        self.INTERACT = 5
+        self.viewer = None
 
-    def transition_fn(self, state, human_action=0, robot_action=0):
+    def get_transition_distribution(self, state, human_action, robot_action):
         s = deepcopy(state)
 
         # s['human_pos'] = self.update_pos(state['human_pos'], human_action)
@@ -94,22 +69,15 @@ class SmallPieGridworldAssistanceGame(AssistanceGame):
         s['prev_h_action'] = human_action
         s['prev_r_action'] = robot_action
 
-        return s
+        return KroneckerDistribution(s)
 
 
     def update_pos(self, pos, act):
-        dirs = [
-            (0, 0),
-            (1, 0),
-            (0, 1),
-            (-1, 0),
-            (0, -1),
-        ]
-        if act >= len(dirs):
+        if act >= len(MOVEMENT_ACTIONS):
             return pos
 
         x, y = pos
-        dx, dy = dirs[act]
+        dx, dy = MOVEMENT_ACTIONS[act]
         new_x = np.clip(x + dx, 0, self.width - 1)
         new_y = np.clip(y + dy, 0, self.height - 1)
 
@@ -138,32 +106,68 @@ class SmallPieGridworldAssistanceGame(AssistanceGame):
             return plate
         return None
 
+    def get_reward(self, state, aH, aR, next_state, theta):
+        if next_state['pie'] is None:
+            return 0
 
-class SmallPieGridworldAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=functional_random_policy_fn, **kwargs):
-        assistance_game = SmallPieGridworldAssistanceGame()
+        preferred_idx = max(range(len(theta)), key=lambda i: theta[i]) # argmax
+        actual_idx = [i for i, recipe in enumerate(self.recipes) if recipe == next_state['pie']][0]
+        return 10 if actual_idx == preferred_idx else 1
 
-        human_policy_fn = small_pie_human_policy_fn
+    def get_human_action_distribution(self, obsH, prev_aR, theta):
+        question = prev_aR - 6
+        answer = theta[question] if question >=0 else 0
+        return KroneckerDistribution(answer)
 
-        self.ag = assistance_game
+    def is_terminal(self, state):
+        return state['pie'] != None
 
-        super().__init__(
-            assistance_game=assistance_game,
-            human_policy_fn=human_policy_fn,
+    def encode_obs(self, obs, prev_aH):
+        num_ingredients = len(self.counter_items) - 1
+        def one_hot(i, n):
+            return np.eye(n)[i]
 
-            state_space_builder=small_pie_state_space_builder,
-            transition_model_fn_builder=small_pie_transition_model_fn_builder,
-            reward_model_fn_builder=small_pie_reward_model_fn_builder,
-            sensor_model_fn_builder=small_pie_sensor_model_fn_builder,
-            observation_model_fn=small_pie_observation_model_fn_builder(assistance_game),
-            termination_model_fn_builder=small_pie_termination_model_fn_builder,
-        )
+        def position_ob(pos):
+            x, y = pos
+            return np.concatenate([
+                one_hot(x, self.width),
+                one_hot(y, self.height),
+            ])
 
-    def render(self, mode='human'):
-        print(self.state)
+        def item_idx(item):
+            return ord(item) - ord('A')
 
-        width = 5
-        height = 3
+        def hand_ob(hand):
+            if hand == '':
+                return np.zeros(num_ingredients)
+            else:
+                return one_hot(item_idx(hand), num_ingredients)
+
+        def plate_ob(plate):
+            ob = np.zeros(num_ingredients)
+            for item in plate:
+                ob[item_idx(item)] = 1.0
+            return ob
+
+        return np.concatenate([
+            # position_ob(state['human_pos']),
+            position_ob(obs['robot_pos']),
+            # hand_ob(state['human_hand']),
+            hand_ob(obs['robot_hand']),
+            plate_ob(obs['plate']),
+            np.array([obs['prev_h_action']]),
+        ])
+
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+        super().close()
+
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
+        print(state)
+
+        width = self.width
+        height = self.height
 
         grid_side = 30
         gs = grid_side
@@ -253,7 +257,7 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
                 counter.set_color(r, g, b)
                 self.viewer.add_geom(counter)
 
-            for pos, itemname in self.ag.counter_items.items():
+            for pos, itemname in self.counter_items.items():
                 counter_pos = move_to_counter(pos)
                 coords = self.grid.coords_from_pos(counter_pos)
 
@@ -273,7 +277,7 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
             header_transform = rendering.Transform()
             header_transform.set_translation(header_x, header_y)
 
-            for i, recipe in enumerate(self.ag.recipes):
+            for i, recipe in enumerate(self.recipes):
                 formula = '+'.join(recipe) + f'={i}'
                 for j, c in enumerate(formula):
                     img, tr = make_item_image[c](s=0.5)
@@ -322,13 +326,13 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
                 self.pies.append(pie)
 
 
-        human_pos = self.state['human_pos']
-        robot_pos = self.state['robot_pos']
-        # human_hand = self.state['human_hand']
-        robot_hand = self.state['robot_hand']
-        plate = self.state['plate']
-        pie = self.state['pie']
-        preferred_idx = self.state['preferred_idx']
+        human_pos = state['human_pos']
+        robot_pos = state['robot_pos']
+        # human_hand = state['human_hand']
+        robot_hand = state['robot_hand']
+        plate = state['plate']
+        pie = state['pie']
+        preferred_idx = max(range(len(theta)), key=lambda i: theta[i]) # argmax
 
         human_coords = self.grid.coords_from_pos(human_pos)
         self.human_transform.set_translation(*human_coords)
@@ -349,7 +353,7 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
                 item.add_attr(hand_transform)
                 self.viewer.add_onetime(item)
 
-        items_to_pos = {item:pos for pos, item in self.ag.counter_items.items()}
+        items_to_pos = {item:pos for pos, item in self.counter_items.items()}
         plate_pos = move_to_counter(items_to_pos['P'])
         plate_coords = self.grid.coords_from_pos(plate_pos)
 
@@ -357,7 +361,7 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
         ### Render plate content
 
         if pie is not None:
-            for idx, recipe in enumerate(self.ag.recipes):
+            for idx, recipe in enumerate(self.recipes):
                 if pie == recipe:
                     pie, transform = make_item_image[str(idx)](s=0.65)
                     transform.set_translation(*plate_coords)
@@ -382,148 +386,3 @@ class SmallPieGridworldAssistanceProblem(AssistanceProblem):
 
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
-
-
-class SmallPieGridworldProblemStateSpace:
-    def __init__(self, ag):
-        self.initial_state = ag.initial_state
-        self.thetas_dists = [ag.reward_distribution[recipe] for recipe in ag.recipes]
-
-    def sample_initial_state(self):
-        state = deepcopy(self.initial_state)
-        thetas = [np.random.uniform(low, high) for low, high in self.thetas_dists]
-        state['thetas'] = thetas
-        state['preferred_idx'] = max(range(len(thetas)), key=lambda i: thetas[i]) # argmax
-        return state
-
-def small_pie_state_space_builder(ag):
-    return SmallPieGridworldProblemStateSpace(ag)
-
-def small_pie_transition_model_fn_builder(ag, human_policy_fn):
-    def transition_fn(state, action):
-        human_policy = human_policy_fn(ag, state['thetas'])
-        return ag.transition(state, human_policy(state), action)
-
-    transition_model_fn = partial(FunctionalTransitionModel, fn=transition_fn)
-    return transition_model_fn
-
-def small_pie_reward_model_fn_builder(ag, human_policy_fn):
-    recipes = ag.recipes
-    
-    def reward_fn(state, action=None, next_state=None):
-        if next_state['pie'] is None:
-            return 0
-
-        idx = [i for i, recipe in enumerate(recipes) if recipe == next_state['pie']][0]
-        return 10 if idx == next_state['preferred_idx'] else -1
-
-    def is_subset(x, y):
-        # TODO: Handle duplicates
-        return all(a in y for a in x)
-    
-    def shaping_fn(state):
-        total = 0.0
-        hand = state['robot_hand']
-        plate = state['plate']
-        preferred_idx = state['preferred_idx']
-        # TODO: Should check whether the item in hand is actually useful (e.g. not already on the plate, contributes to some recipe)
-        if hand == '':
-            pass
-        elif hand in recipes[preferred_idx]:
-            total += 1.0
-        else:
-            total += 0.1
-
-        if plate == '':
-            pass
-        elif is_subset(plate, recipes[preferred_idx]):
-            total += 2.0 * len(plate)
-        else:
-            # TODO: Should check that the plate corresponds to some possible recipe
-            total += 0.2 * len(plate)
-
-        return total
-
-    # To disable reward shaping, simply pass in shaping_fns=[]
-    reward_model_fn = partial(ShapedFunctionalRewardModel, fn=reward_fn, shaping_fns=[shaping_fn])
-    return reward_model_fn
-
-def small_pie_sensor_model_fn_builder(ag, human_policy_fn):
-    return SensorModel
-
-def small_pie_observation_model_fn_builder(ag):
-    num_ingredients = len(ag.counter_items) - 1
-
-    def observation_fn(state, action=None, sense=None):
-        def one_hot(i, n):
-            return np.eye(n)[i]
-
-        def position_ob(pos):
-            x, y = pos
-            return np.concatenate([
-                one_hot(x, ag.width),
-                one_hot(y, ag.height),
-            ])
-
-        def item_idx(item):
-            return ord(item) - ord('A')
-
-        def hand_ob(hand):
-            if hand == '':
-                return np.zeros(num_ingredients)
-            else:
-                return one_hot(item_idx(hand), num_ingredients)
-
-        def plate_ob(plate):
-            ob = np.zeros(num_ingredients)
-            for item in plate:
-                ob[item_idx(item)] = 1.0
-            return ob
-
-        return np.concatenate([
-            # position_ob(state['human_pos']),
-            position_ob(state['robot_pos']),
-            # hand_ob(state['human_hand']),
-            hand_ob(state['robot_hand']),
-            plate_ob(state['plate']),
-            np.array([state['prev_h_action']]),
-        ])
-
-    num_dims = ag.width + ag.height + 2 * num_ingredients + 1
-    low = np.zeros(num_dims)
-    high = np.ones(num_dims)
-    high[-1] = max(map(max, ag.reward_distribution.values()))
-
-    ob_space = Box(low=low, high=high)
-
-    observation_model_fn = partial(FunctionalObservationModel, fn=observation_fn, space=ob_space)
-    return observation_model_fn
-
-
-class SmallPieTerminationModel(TerminationModel):
-    def __call__(self):
-        return self.pomdp.state['pie'] != None
-
-def small_pie_termination_model_fn_builder(ag, human_policy):
-    return SmallPieTerminationModel
-
-
-def small_pie_human_policy_fn(ag, thetas):
-    def human_policy(state):
-        question = state['prev_r_action'] - 6
-        return thetas[question] if question >= 0 else 0
-    return human_policy
-
-
-def get_small_pie_hardcoded_robot_policy(*args, **kwargs):
-    class Policy:
-        def __init__(self):
-            S, R, U, L, D, A, QA, QB, QC = range(9)
-            self.actions = [R, A, R, R, R, U, A, A]
-
-        def predict(self, ob, state=None):
-            if not self.actions:
-                return 0, None
-            return self.actions.pop(0), None
-
-    return Policy()

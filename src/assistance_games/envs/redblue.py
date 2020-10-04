@@ -1,155 +1,90 @@
-from functools import partial
-
-from gym.spaces import Discrete
+from gym.spaces import Discrete, Box
 import numpy as np
-
-from assistance_games.core import (
-    AssistanceGame,
-    AssistanceProblem,
-    BeliefObservationModel,
-    get_human_policy,
-    DiscreteFeatureSenseObservationModel,
-    discrete_reward_model_fn_builder,
-)
 
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset
+from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
 
+class RedBlue(AssistancePOMDPWithMatrixSupport):
+    """Red-blue problem. Fully observable assistance POMDP.
 
-class RedBlueAssistanceGame(AssistanceGame):
-    """
-
-    This is the map of the assistance game:
-
-    ..... .....
-    .r b. .rRb.
-    ..H.. .....
-    .....
-
-    H = Human
-    R = Robot
-    r = red ball
-    b = blue ball
-
-    The human prefers either the red or blue ball.
-    The human and robot are separated, but both of them can
-    either pick a red or a blue ball. Since the robot is
-    unaware of which ball the human prefers, the optimal
-    strategy for the robot is to wait for the human to pick.
-
+    A state / observation is a Numpy array of length 2, encoding the human's state followed by the robot's state.
     """
     def __init__(self):
-        human_state_space = Discrete(4)
-        robot_state_space = Discrete(3)
-
-        human_action_space = Discrete(2)
-        robot_action_space = Discrete(3)
-
-        human_transition = np.zeros((human_state_space.n, human_action_space.n, human_state_space.n))
-        human_transition[0, :, 1] = 1.0
-
-        human_transition[1, 0, 2] = 1.0
-        human_transition[1, 1, 3] = 1.0
-
-        human_transition[2, :, 2] = 1.0
-        human_transition[3, :, 3] = 1.0
-
-        robot_transition = np.zeros((robot_state_space.n, robot_action_space.n, robot_state_space.n))
-        robot_transition[0, 0, 1] = 1.0
-        robot_transition[0, 1, 2] = 1.0
-        robot_transition[0, 2, 0] = 1.0
-
-        robot_transition[1, :, 1] = 1.0
-        robot_transition[2, :, 2] = 1.0
-
-        reward_0_h = np.zeros((human_state_space.n, human_action_space.n, human_state_space.n))
-        reward_0_h[1, 0] = 1.0
-        reward_0_r = np.zeros((robot_state_space.n, robot_action_space.n, robot_state_space.n))
-        reward_0_r[0, 0] = 1.0
-
-        reward_1_h = np.zeros((human_state_space.n, human_action_space.n, human_state_space.n))
-        reward_1_h[1, 1] = 1.0
-        reward_1_r = np.zeros((robot_state_space.n, robot_action_space.n, robot_state_space.n))
-        reward_1_r[0, 1] = 1.0
-
-
-        num_states = human_state_space.n * robot_state_space.n
-        state_space = Discrete(num_states)
-
-        def state_idx(human_state, robot_state):
-            return robot_state_space.n * human_state + robot_state
-
-        transition = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
-
-        reward0 = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
-        reward1 = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
-
-        for h_st in range(human_state_space.n):
-            for r_st in range(robot_state_space.n):
-                st = state_idx(h_st, r_st)
-                for h_a in range(human_action_space.n):
-                    for r_a in range(robot_action_space.n):
-
-                        for n_h_st in range(human_state_space.n):
-                            for n_r_st in range(robot_state_space.n):
-                                n_st = state_idx(n_h_st, n_r_st)
-
-                                reward0[st, h_a, r_a, n_st] = (
-                                    reward_0_h[h_st, h_a, n_h_st]
-                                    + reward_0_r[r_st, r_a, n_r_st]
-                                )
-                                reward1[st, h_a, r_a, n_st] = (
-                                    reward_1_h[h_st, h_a, n_h_st]
-                                    + reward_1_r[r_st, r_a, n_r_st]
-                                )
-
-                                transition[st, h_a, r_a, n_st] = (
-                                    human_transition[h_st, h_a, n_h_st]
-                                    * robot_transition[r_st, r_a, n_r_st]
-                                )
-
-
-        rewards_dist = [(reward0, 0.5), (reward1, 0.5)]
-        initial_state_dist = np.zeros(num_states)
-        initial_state_dist[0] = 1.0
-
-        horizon = 4
-        discount = 0.9
+        self.nS = 12  # 4 human locations, 3 robot locations
+        self.nAH = 2
+        self.nAR = 3
+        self.nOR = self.nS  # Fully observable
+        self.viewer = None
 
         super().__init__(
-            state_space=state_space,
-            human_action_space=human_action_space,
-            robot_action_space=robot_action_space,
-            transition=transition,
-            reward_distribution=rewards_dist,
-            initial_state_distribution=initial_state_dist,
-            horizon=horizon,
-            discount=discount,
+            discount=0.9,
+            horizon=4,
+            theta_dist=UniformDiscreteDistribution(['red', 'blue']),
+            init_state_dist=KroneckerDistribution([0, 0]),
+            # Observation space should really be tuple of discretes
+            observation_space=Box(low=np.array([0, 0, 0]), high=np.array([3, 2, 1])),
+            action_space=Discrete(3),
+            default_aH=0,
+            default_aR=0,
+            deterministic=True,
+            fully_observable=True
         )
 
+    def state_to_index(self, state):
+        h, r = state
+        return h * 3 + r
 
-class RedBlueAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=get_human_policy, use_belief_space=True):
-        assistance_game = RedBlueAssistanceGame()
+    def index_to_state(self, num):
+        return (num // 3), (num % 3)
 
-        if use_belief_space:
-            observation_model_fn = BeliefObservationModel
+    def encode_obs(self, obs, prev_aH):
+        return np.array(obs + [prev_aH])
+
+    def decode_obs(self, encoded_obs):
+        h, r, prev_aH = encoded_obs
+        return (h, r), prev_aH
+
+    def get_transition_distribution(self, state, aH, aR):
+        h, r = state
+        if h == 0:
+            newH = 1
+        elif h >= 2:
+            newH = h
         else:
-            feature_extractor = lambda state : state % assistance_game.state_space.n
-            setattr(feature_extractor, 'n', assistance_game.state_space.n)
-            observation_model_fn = partial(DiscreteFeatureSenseObservationModel, feature_extractor=feature_extractor)
+            newH = aH + 2
 
-        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
+        if r >= 1:
+            newR = r
+        else:
+            newR = (aR + 1) % 3
+        return KroneckerDistribution([newH, newR])
 
-        super().__init__(
-            assistance_game=assistance_game,
-            human_policy_fn=human_policy_fn,
-            observation_model_fn=observation_model_fn,
-            reward_model_fn_builder=reward_model_fn_builder,
-        )
-        self.ag_state_space_n = assistance_game.state_space.n
+    def get_reward(self, state, aH, aR, next_state, theta):
+        h, r = state
+        reward = 0.0
+        if h == 1 and ((theta == 'red' and aH == 0) or (theta == 'blue' and aH == 1)):
+            reward += 1.0
+        if r == 0 and ((theta == 'red' and aR == 0) or (theta == 'blue' and aR == 1)):
+            reward += 1.0
+        return reward
 
-    def render(self, mode='human'):
+    def get_human_action_distribution(self, obsH, prev_aR, theta):
+        h, r = obsH
+        aH = 0
+        if h == 1 and theta == 'blue':
+            aH = 1
+        return KroneckerDistribution(aH)
+
+    def is_terminal(self, state):
+        return False
+
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+        return super().close()
+
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
         human_grid_pos = [(1, -1), (1, 0), (0, 0), (2, 0)]
         robot_grid_pos = [(1, 0), (0, 0), (2, 0)]
 
@@ -202,9 +137,7 @@ class RedBlueAssistanceProblem(AssistanceProblem):
             robot.add_attr(self.robot_transform)
             self.viewer.add_geom(robot)
 
-        ob = self.state % self.ag_state_space_n
-        human_state = ob // 3
-        robot_state = ob % 3
+        human_state, robot_state = state
 
         human_coords = self.human_grid.coords_from_pos(human_grid_pos[human_state])
         robot_coords = self.robot_grid.coords_from_pos(robot_grid_pos[robot_state])
@@ -213,5 +146,3 @@ class RedBlueAssistanceProblem(AssistanceProblem):
         self.robot_transform.set_translation(*robot_coords)
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')
-
-

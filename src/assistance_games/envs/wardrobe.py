@@ -1,24 +1,16 @@
 from collections import namedtuple
-from functools import partial
-
-from gym.spaces import Discrete
+from gym.spaces import Discrete, Box
 import numpy as np
 
-
-from assistance_games.core import (
-    AssistanceGame,
-    AssistanceProblem,
-    get_human_policy,
-    BeliefObservationModel,
-    DiscreteFeatureSenseObservationModel,
-    discrete_reward_model_fn_builder,
-)
-
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset, dict_to_sparse
+from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
+from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
 
 
-class WardrobeAssistanceGame(AssistanceGame):
+WardrobeState = namedtuple('WardrobeState', ['H', 'R', 'W'])
+
+
+class Wardrobe(AssistancePOMDPWithMatrixSupport):
     """
 
     This is the map of the assistance game:
@@ -26,184 +18,158 @@ class WardrobeAssistanceGame(AssistanceGame):
     .......
     .     .
     .     .
-    . TT  .
-    . TT  .
+    . WW  .
+    . WW  .
     .H   R.
     .......
 
     H = Human
     R = Robot
-    T = Wardrobe
+    W = Wardrobe
 
     The human wants to move the wardrobe to one of the corners.
     To move the wardrobe, two agents need to push it at the same time
     in the same direction.
 
-    Size of the map and of the table can be chosen.
-    """
+    Size of the map and of the wardrobe can be chosen.
 
-    State = namedtuple('State', ['human', 'robot', 'wardrobe'])
+    States are namedtuples where the keys H, R, and W are mapped to
+    the positions of the human, robot and wardrobe respectively.
+    """
 
     def __init__(self, size=3, wardrobe_size=1):
         self.size = size
         self.wardrobe_size = wardrobe_size
+        w_size = self.size - self.wardrobe_size + 1
+        self.wardrobe_range = w_size
+        self.num_vals_for_sequence = [size] * 4 + [w_size] * 2
+        obs_space_highs = np.array(self.num_vals_for_sequence + [5]) - 1
 
-        wardrobe_range = self.size - self.wardrobe_size + 1
-        self.wardrobe_range = wardrobe_range
-
-        target_and_reward =  {
-            (0, 0) : {},
-            (wardrobe_range - 1, 0) : {},
-            (0, wardrobe_range - 1) : {},
-            (wardrobe_range - 1, wardrobe_range - 1) : {},
-        }
-        self.targets = target_and_reward
-
-        num_states = self.size ** 4 * self.wardrobe_range ** 2
-        state_space = Discrete(num_states)
-
-        num_actions = 4
-        action_space = Discrete(num_actions)
-
-
-        T = {}
-        T_shape = (num_states, num_actions, num_actions, num_states)
-
-        for hy in range(self.size):
-            for hx in range(self.size):
-                for ry in range(self.size):
-                    for rx in range(self.size):
-                        for ty in range(wardrobe_range):
-                            for tx in range(wardrobe_range):
-                                state = self.State(human=(hx, hy), robot=(rx, ry), wardrobe=(tx, ty))
-                                idx = self.get_idx(state)
-                                for ah in range(num_actions):
-                                    for ar in range(num_actions):
-                                        next_state = self.transition_fn(state, ah, ar)
-                                        next_idx = self.get_idx(next_state)
-                                        T[idx, ah, ar, next_idx] = 1.0
-                                        if next_state.wardrobe in target_and_reward and state.wardrobe != next_state.wardrobe:
-                                            target_and_reward[next_state.wardrobe][idx, ah, ar, next_idx] = 1.0
-
-        transition = dict_to_sparse(T, T_shape)
-
-        rewards_dist = [(dict_to_sparse(R, T_shape), 0.25) for R in target_and_reward.values()]
-
-        initial_state = ((0, 0), (self.size - 1, 0), (1, 1))
-        initial_state_dist = np.zeros(num_states)
-        initial_state_dist[self.get_idx(initial_state)] = 1.0
-
-
-        horizon = 3 * self.size
-        discount = 0.7
+        self.nS = (size ** 4) * (w_size ** 2)
+        self.nAH = 4
+        self.nAR = 4
+        self.nOR = self.nS  # Fully observable
+        self.viewer = None
 
         super().__init__(
-            state_space=state_space,
-            human_action_space=action_space,
-            robot_action_space=action_space,
-            transition=transition,
-            reward_distribution=rewards_dist,
-            initial_state_distribution=initial_state_dist,
-            horizon=horizon,
-            discount=discount,
+            human_policy_type={'H': 'optimal', 'R': 'optimal'},
+            discount=0.7,
+            horizon=3*size,
+            theta_dist=UniformDiscreteDistribution([(0, 0), (0, w_size-1), (w_size-1, 0), (w_size-1, w_size-1)]),
+            init_state_dist=KroneckerDistribution(WardrobeState(
+                H=(0, 0),
+                R=(self.size - 1, 0),
+                W=(1, 1),
+            )),
+            # Observation space should really be tuple of discretes
+            observation_space=Box(low=np.array([0] * 7), high=obs_space_highs),
+            action_space=Discrete(4),
+            default_aH=0,
+            default_aR=0,
+            deterministic=True,
+            fully_observable=True
         )
 
+    def state_to_index(self, state):
+        h, r, w = state.H, state.R, state.W
+        state_as_sequence = h + r + w
 
-    def transition_fn(self, state, human_action, robot_action):
-        next_human_pos = self.move(state.human, human_action)
-        next_robot_pos = self.move(state.robot, robot_action)
+        hr_size, w_size = self.size, self.wardrobe_range
+        num_possible_vals = [hr_size] * 4 + [w_size] * 2
 
-        if (human_action == robot_action and
-            self.wardrobe_can_move(state.wardrobe, human_action) and
-            self.in_wardrobe(state, next_human_pos) and
-            self.in_wardrobe(state, next_robot_pos)
+        index = 0
+        for val, num_possible_val in zip(state_as_sequence, num_possible_vals):
+            index = index * num_possible_val + val
+        return index
+
+    def index_to_state(self, num):
+        hr_size, w_size = self.size, self.wardrobe_range
+        num_possible_vals = [w_size] * 2 + [hr_size] * 4
+
+        state_as_sequence = []
+        for num_possible_val in num_possible_vals:
+            state_as_sequence.append(num % num_possible_val)
+            num = num // num_possible_val
+
+        return WardrobeState(
+            H=(state_as_sequence[5], state_as_sequence[4]),
+            R=(state_as_sequence[3], state_as_sequence[2]),
+            W=(state_as_sequence[1], state_as_sequence[0]),
+        )
+
+    def encode_obs(self, obs, prev_aH):
+        h, r, w = obs.H, obs.R, obs.W
+        return np.array(h + r + w + (prev_aH,))
+
+    def decode_obs(self, encoded_obs):
+        state = WardrobeState(
+            H=encoded_obs[0:2],
+            R=encoded_obs[2:4],
+            W=encoded_obs[4:6],
+        )
+        return state, encoded_obs[6]
+
+    def get_transition_distribution(self, state, aH, aR):
+        next_human_pos = self._move(state.H, aH)
+        next_robot_pos = self._move(state.R, aR)
+
+        if (aH == aR and
+            self._wardrobe_can_move(state.W, aH) and
+            self._in_wardrobe(state, next_human_pos) and
+            self._in_wardrobe(state, next_robot_pos)
         ):
-            next_wardrobe_pos = self.move(state.wardrobe, human_action)
+            next_wardrobe_pos = self._move(state.W, aH)
         else:
-            next_wardrobe_pos = state.wardrobe
-            next_human_pos = next_human_pos if not self.in_wardrobe(state, next_human_pos) else state.human
-            next_robot_pos = next_robot_pos if not self.in_wardrobe(state, next_robot_pos) else state.robot
+            next_wardrobe_pos = state.W
+            next_human_pos = next_human_pos if not self._in_wardrobe(state, next_human_pos) else state.H
+            next_robot_pos = next_robot_pos if not self._in_wardrobe(state, next_robot_pos) else state.R
 
-        return self.State(human=next_human_pos,
-                          robot=next_robot_pos,
-                          wardrobe=next_wardrobe_pos)
+        state = WardrobeState(
+            H=next_human_pos,
+            R=next_robot_pos,
+            W=next_wardrobe_pos,
+        )
+        return KroneckerDistribution(state)
 
+    def get_reward(self, state, aH, aR, next_state, theta):
+        if next_state.W == theta and state.W != theta:
+            return 1.0
+        return 0.0
 
-    def move(self, pos, act, size=None):
+    def is_terminal(self, state):
+        return False
+
+    def close(self):
+        if self.viewer is not None:
+            self.viewer.close()
+        return super().close()
+
+    def _move(self, pos, act, size=None):
+        assert act != 4, "STAY action not allowed"
         if size is None:
             size = self.size
 
         x, y = pos
-        dirs = [
-            (1, 0),
-            (0, 1),
-            (-1, 0),
-            (0, -1),
-        ]
-        dx, dy = dirs[act]
+        dx, dy = MOVEMENT_ACTIONS[act]
 
         new_x = np.clip(x + dx, 0, size - 1)
         new_y = np.clip(y + dy, 0, size - 1)
 
         return new_x, new_y
 
-    def wardrobe_can_move(self, pos, act):
-        return self.move(pos, act, size=self.wardrobe_range) != pos
+    def _wardrobe_can_move(self, pos, act):
+        return self._move(pos, act, size=self.wardrobe_range) != pos
 
 
-    def in_wardrobe(self, state, pos):
-        wardrobe_x, wardrobe_y = state.wardrobe
+    def _in_wardrobe(self, state, pos):
+        wardrobe_x, wardrobe_y = state.W
         x, y = pos
         return (0 <= x - wardrobe_x < self.wardrobe_size and
                 0 <= y - wardrobe_y < self.wardrobe_size)
 
-    def get_idx(self, state):
-        (hx, hy), (rx, ry), (tx, ty) = state
-
-        return (
-            ty + self.wardrobe_range * (
-            tx + self.wardrobe_range * (
-            ry + self.size * (
-            rx + self.size * (
-            hy + self.size * (
-            hx)))))
-        )
-
-    def get_state(self, idx):
-        steps = [self.wardrobe_range, self.wardrobe_range, self.size, self.size, self.size, self.size]
-
-        vals = []
-        for step in steps:
-            vals.append(idx % step)
-            idx //= step
-
-        hx, hy, rx, ry, tx, ty = reversed(vals)
-        return self.State(human=(hx, hy), robot=(rx, ry), wardrobe=(tx, ty))
-
-
-class WardrobeAssistanceProblem(AssistanceProblem):
-    def __init__(self, human_policy_fn=get_human_policy, use_belief_space=True):
-        self.assistance_game = WardrobeAssistanceGame()
-
-        if use_belief_space:
-            observation_model_fn = BeliefObservationModel
-        else:
-            feature_extractor = lambda state : state % self.assistance_game.state_space.n
-            setattr(feature_extractor, 'n', self.assistance_game.state_space.n)
-            observation_model_fn = partial(DiscreteFeatureSenseObservationModel, feature_extractor=feature_extractor)
-
-        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
-
-        super().__init__(
-            assistance_game=self.assistance_game,
-            human_policy_fn=human_policy_fn,
-            observation_model_fn=observation_model_fn,
-            reward_model_fn_builder=reward_model_fn_builder,
-        )
-
-    def render(self, mode='human'):
-        size = self.assistance_game.size
-        wardrobe_size = self.assistance_game.wardrobe_size
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
+        size = self.size
+        wardrobe_size = self.wardrobe_size
 
         if self.viewer is None:
             self.viewer = rendering.Viewer(500,600)
@@ -230,11 +196,7 @@ class WardrobeAssistanceProblem(AssistanceProblem):
             wardrobe.add_attr(self.wardrobe_transform)
             self.viewer.add_geom(wardrobe)
 
-        nS0 = self.assistance_game.state_space.n
-        idx = self.state % nS0
-        rew_idx = self.state // nS0
-
-        human_pos, robot_pos, wardrobe_top_left = self.assistance_game.get_state(idx)
+        human_pos, robot_pos, wardrobe_top_left = state.H, state.R, state.W
 
         human_coords = self.grid.coords_from_pos(human_pos)
         robot_coords = self.grid.coords_from_pos(robot_pos)
@@ -250,22 +212,5 @@ class WardrobeAssistanceProblem(AssistanceProblem):
         self.human_transform.set_translation(*human_coords)
         self.robot_transform.set_translation(*robot_coords)
         self.wardrobe_transform.set_translation(*wardrobe_coords)
-
-
-        def add_bar(pos, ratio):
-            x, y = self.grid.coords_from_pos(pos)
-            xs, ys = self.grid.x_step, self.grid.y_step
-            l, r = x - xs/2, x - xs/2 + 3
-            b = y - ys/2
-            t = b + ratio * ys
-            bar = rendering.FilledPolygon([(l,b), (l,t), (r,t), (r,b)])
-            bar.set_color(0.7, 0.3, 0.3)
-            self.viewer.add_onetime(bar)
-
-        if hasattr(self.observation_model, 'belief'):
-            reward_beliefs = self.observation_model.belief.reshape(-1, nS0).sum(axis=1)
-
-            for pos, ratio in zip(self.assistance_game.targets, reward_beliefs):
-                add_bar(pos, ratio)
 
         return self.viewer.render(return_rgb_array = mode=='rgb_array')

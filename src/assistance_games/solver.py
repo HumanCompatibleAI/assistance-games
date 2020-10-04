@@ -22,7 +22,6 @@ from scipy.spatial import distance_matrix
 
 import cvxpy as cp
 
-from assistance_games.core import TabularBackwardSensorModel
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
 
 Alpha = namedtuple('Alpha', ['vector', 'action'])
@@ -144,6 +143,7 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     num_beliefs = len(beliefs)
     nA = pomdp.get_num_actions()
     T = pomdp.get_transition_matrix()
+    O = pomdp.get_observation_matrix()
     new_beliefs = list(beliefs)
     for i in np.random.permutation(num_beliefs)[:max_new_beliefs]:
         belief = beliefs[i]
@@ -151,8 +151,10 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
         for action in range(nA):
             state = sample_distribution(belief)
             next_state = sample_distribution(T[state, action])
-            ob = pomdp.sensor_model.sample_sense(action=action, state=state, next_state=next_state)
-            new_belief = pomdp.sensor_model.update_belief(belief, action, ob)
+            ob = sample_distribution(O[next_state, :])
+            new_belief = belief @ T[:, action, :]
+            new_belief = new_belief * O[:, ob]
+            new_belief /= new_belief.sum()
             candidates.append(new_belief)
 
         dists = distance_matrix(candidates, new_beliefs).min(axis=1)
@@ -333,9 +335,7 @@ def compute_obs_alphas(pomdp, alphas):
     nA = pomdp.get_num_actions()
     disc = pomdp.discount
     T = pomdp.get_transition_matrix()
-
-    use_back_sensor = isinstance(pomdp.sensor_model, TabularBackwardSensorModel)
-    O = pomdp.sensor_model.sensor if not use_back_sensor else pomdp.sensor_model.back_sensor
+    O = pomdp.get_observation_matrix()
     nO = O.shape[-1]
 
     alpha_vecs = [alpha.vector for alpha in alphas]
@@ -344,15 +344,12 @@ def compute_obs_alphas(pomdp, alphas):
     alpha_matrix = np.array(alpha_vecs).T
     for a in range(nA):
         for o in range(nO):
-            if use_back_sensor:
-                obs_alphas[a, o] = disc * (O[a, :, o] * (T[:, a] @ alpha_matrix).T)
-            else:
-                obs_alphas[a, o] = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
+            obs_alphas[a, o] = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
     return obs_alphas
 
 
 
-def point_based_value_backup(pomdp, alphas, beliefs=None, use_back_sensor=False):
+def point_based_value_backup(pomdp, alphas, beliefs=None):
     """Performs approximate value backup by tracking a finite set of beliefs.
 
     This consists of the following phases:
@@ -365,9 +362,7 @@ def point_based_value_backup(pomdp, alphas, beliefs=None, use_back_sensor=False)
     nS = pomdp.get_num_states()
     nA = pomdp.get_num_actions()
     T = pomdp.get_transition_matrix()
-
-    use_back_sensor = isinstance(pomdp.sensor_model, TabularBackwardSensorModel)
-    O = pomdp.sensor_model.sensor if not use_back_sensor else pomdp.sensor_model.back_sensor
+    O = pomdp.get_observation_matrix()
     nO = O.shape[-1]
 
     R = pomdp.get_reward_matrix()

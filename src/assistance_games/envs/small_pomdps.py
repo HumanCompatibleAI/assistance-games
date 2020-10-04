@@ -3,7 +3,7 @@
 from gym.spaces import Discrete
 import numpy as np
 
-from assistance_games.core.core2 import (
+from assistance_games.core import (
     POMDPWithMatrices, UniformDiscreteDistribution
 )
 

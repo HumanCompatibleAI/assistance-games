@@ -4,7 +4,7 @@
 from functools import partial
 import numpy as np
 
-from assistance_games.core.core2 import ReducedAssistancePOMDP, ReducedFullyObservableAssistancePOMDPWithMatrices
+from assistance_games.core import ReducedAssistancePOMDP, ReducedFullyObservableAssistancePOMDPWithMatrices
 import assistance_games.envs as envs
 from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.parser import read_pomdp
@@ -48,7 +48,7 @@ def test_fourthree_reward():
 
 
 def test_redblue_assistance_problem_reward():
-    env = ReducedFullyObservableAssistancePOMDPWithMatrices(envs.RedBlue2())
+    env = ReducedFullyObservableAssistancePOMDPWithMatrices(envs.RedBlue())
     target_reward = 2.0
     policy = pbvi(env)
     reward = eval_policy(policy, env)
@@ -60,7 +60,7 @@ def test_similar_rewards_redblue():
 
     returns = []
     for solver in solvers:
-        env = envs.RedBlue2()
+        env = envs.RedBlue()
         if solver == deep_rl_100k:
             env = get_venv(ReducedAssistancePOMDP(env))
         else:

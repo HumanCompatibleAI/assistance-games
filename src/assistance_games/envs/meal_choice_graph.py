@@ -1,190 +1,163 @@
-"""Ready-to-use POMDP and AssistanceProblem environments.
-"""
 from collections import namedtuple
-from copy import copy, deepcopy
-from itertools import product
-
-import os
-
-import gym
-from gym.spaces import Discrete, MultiDiscrete
+from gym.spaces import Discrete, Box
 import numpy as np
-import pkg_resources
-import sparse
 
-from functools import partial
-
-from assistance_games.core import (
-    POMDP,
-    AssistanceGame,
-    AssistanceProblem,
-    get_human_policy,
-    BeliefObservationModel,
-    FeatureSenseObservationModel,
-    discrete_reward_model_fn_builder,
-)
-
-from assistance_games.parser import read_pomdp
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset, sample_distribution, dict_to_sparse
+from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
+from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
 
-class MealChoiceTimeDependentAG(AssistanceGame):
-    State = namedtuple('State', ['s_w', 'query', 'time'])
 
-    def __init__(self, horizon=20):
-        self.horizon = horizon
-        self.max_feature_value = horizon
-        n_world_states = 5
-        self.n_world_states = n_world_states
-        n_world_actions = 3
-        self.num_world_actions = n_world_actions
-        n_queries = 1
-        self.n_queries = n_queries
+MealChoiceState = namedtuple('MealChoiceState', ['world', 'time'])
 
-        state_space = Discrete((n_world_states + n_world_states * n_queries) * horizon + 1)
 
-        self.state_space = state_space
-        human_action_space = Discrete(3)
-        robot_action_space = Discrete(n_world_actions + n_queries)
+class MealChoice(AssistancePOMDPWithMatrixSupport):
+    """An environment in which R must ask H about their preferences after H returns.
 
-        reward0 = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
-        reward1 = np.zeros_like(reward0)
-        transition = np.zeros((state_space.n, human_action_space.n, robot_action_space.n, state_space.n))
-        for s_idx in range(state_space.n):
-            s = self.get_state(s_idx)
-            assert s_idx == self.get_idx(s)
-            for a_r in range(robot_action_space.n):
-                # there is no loop over the human actions as they don't affect the resulting state
-                transition[s_idx, :, a_r, self.transition_state_id(s_idx, a_r)] = 1
-                reward0[s_idx, :, a_r, :] = self.reward_fn(s, a_r, world_rewards=[0, 0., 2., -1., 0])
-                reward1[s_idx, :, a_r, :] = self.reward_fn(s, a_r, world_rewards=[0, 0., -1., 2., 0])
+    A state consists of the world state and the current time. The
+    robot has to make either cake or pizza, but doesn't know which H
+    prefers, and H is currently at work. R knows when H will return,
+    and must use this information to figure out whether to guess at
+    H's preference, or to wait for H to ask about their preferences.
+    """
+    WORLD_STATES = ['flour', 'dough', 'cake', 'pizza', 'end']
+    ROBOT_ACTIONS = ['noop', 'create1', 'create2', 'query']
+    HUMAN_ACTIONS = ['noop', 'cake', 'pizza']
+    THETAS = ['cake', 'pizza']
 
-        initial_state_dist = np.zeros(state_space.n)
-        initial_state_dist[0] = 1.0
+    WORLD_STATE_TO_INDEX = {v:i for i, v in enumerate(WORLD_STATES)}
+    ROBOT_ACTION_TO_INDEX = {v:i for i, v in enumerate(ROBOT_ACTIONS)}
+    HUMAN_ACTION_TO_INDEX = {v:i for i, v in enumerate(HUMAN_ACTIONS)}
+
+    def __init__(self, time_when_feedback_available=3, horizon=6):
+        self.num_world_states = len(MealChoice.WORLD_STATES)
+        self.nS = len(MealChoice.WORLD_STATES) * (horizon + 1)
+        self.nAH = len(MealChoice.HUMAN_ACTIONS)
+        self.nAR = len(MealChoice.ROBOT_ACTIONS)
+        self.nOR = self.nS  # Fully observable
+        self.time_when_feedback_available = time_when_feedback_available
+        # One-hot world state, one-hot aH vector, and time
+        self.num_features = self.num_world_states + 4
+        init_state = MealChoiceState(world='flour', time=0)
 
         super().__init__(
-            state_space=state_space,
-            human_action_space=human_action_space,
-            robot_action_space=robot_action_space,
-            transition=transition,
-            reward_distribution=[(reward0, 0.5), (reward1, 0.5)],
-            initial_state_distribution=initial_state_dist,
-            horizon=horizon,
             discount=0.9,
+            horizon=horizon,
+            theta_dist=UniformDiscreteDistribution(MealChoice.THETAS),
+            init_state_dist=KroneckerDistribution(init_state),
+            observation_space=Box(
+                low=np.array([0] * self.num_features),
+                high=np.array([1] * (self.num_features - 1) + [horizon])
+            ),
+            action_space=Discrete(len(MealChoice.ROBOT_ACTIONS)),
+            default_aH='noop',
+            default_aR='noop',
+            deterministic=True,
+            fully_observable=True
         )
 
-    def get_state(self, s_idx):
-        time = s_idx // (self.n_world_states * (self.n_queries + 1))
-        s_idx = s_idx % (self.n_world_states * (self.n_queries + 1))
-        s_w = s_idx % self.n_world_states
-        query = s_idx // self.n_world_states
-        return self.State(s_w=s_w, query=query, time=time)
+    def state_to_index(self, state):
+        world_idx = MealChoice.WORLD_STATE_TO_INDEX[state.world]
+        return state.time * self.num_world_states + world_idx
 
-    def get_idx(self, s):
-        return s.s_w + self.n_world_states * s.query + (self.n_world_states * (self.n_queries + 1)) * s.time
+    def index_to_state(self, num):
+        time, world_idx = num // self.num_world_states, num % self.num_world_states
+        world = MealChoice.WORLD_STATES[world_idx]
+        return MealChoiceState(world=world, time=time)
 
-    def reward_fn(self, s, a_r, world_rewards):
-        # Being in the querying state or doing the no-op or the query action brings no reward.
-        # Because all other world actions change the state, this ensures that the reward is collected only once
-        return world_rewards[s.s_w] if (s.query == 0 and 0 < a_r < self.num_world_actions) else 0
+    def human_action_to_index(self, aH):
+        return MealChoice.HUMAN_ACTION_TO_INDEX[aH]
 
-    def transition_state(self, s, robot_action):
-        # if the robot is currently waiting for human's response, transition back to the world state
-        # (human action doesn't affect this at all)
-        if s.query > 0:
-            return self.State(s_w=s.s_w,
-                              query=0,
-                              time=min(s.time + 1, self.horizon - 1))
-        # if the robot is asking a question, transition to the corresponding query state
-        if robot_action > self.num_world_actions-1:
-            return self.State(s_w=s.s_w,
-                              query=robot_action - self.num_world_actions + 1,
-                              time=min(s.time + 1, self.horizon - 1))
-        # else do a world state transition
+    def index_to_human_action(self, num):
+        return MealChoice.HUMAN_ACTIONS[num]
+
+    def robot_action_to_index(self, aR):
+        return MealChoice.ROBOT_ACTION_TO_INDEX[aR]
+
+    def index_to_robot_action(self, num):
+        return MealChoice.ROBOT_ACTIONS[num]
+
+    def encode_obs(self, obs, prev_aH):
+        world_idx = MealChoice.WORLD_STATE_TO_INDEX[obs.world]
+        prev_aH_idx = self.human_action_to_index(prev_aH)
+
+        result = np.zeros(self.num_features)
+        result[world_idx] = 1
+        result[self.num_world_states + prev_aH_idx] = 1
+        result[-1] = obs.time
+        return result
+
+    def decode_obs(self, encoded_obs):
+        world_idx = np.argmax(encoded_obs[:self.num_world_states])
+        prev_aH_idx = np.argmax(encoded_obs[self.num_world_states:-1])
+        time = int(encoded_obs[-1])
+
+        world = MealChoice.WORLD_STATES[world_idx]
+        prev_aH = self.index_to_human_action(prev_aH_idx)
+        return MealChoiceState(world=world, time=time), prev_aH
+
+    def get_transition_distribution(self, state, aH, aR):
+        if self.is_terminal(state):
+            return KroneckerDistribution(state)
+
+        # aH is already passed to R, and when aR = query is already
+        # passed to H, so we don't have to handle either of those
+        if aR in ['noop', 'query']:
+            next_world = state.world
+        elif state.world == 'dough':
+            next_world = 'cake' if aR == 'create1' else 'pizza'
         else:
-            return self.State(s_w=self.transition_world(s.s_w, robot_action),
-                              query=0,
-                              time=min(s.time + 1, self.horizon - 1))
+            next_world = {
+                'flour': 'dough',
+                'cake': 'end',
+                'pizza': 'end',
+                'end': 'end'
+            }[state.world]
 
-    def transition_world(self, world_state, robot_action):
-        # transitions for the toy 5-state graph mdp
-        s_w, a_r = world_state, robot_action
-        assert type(s_w) is int
-        # the query and the no-op actions don't change the world state
-        if a_r >= self.num_world_actions or a_r == 0: return s_w
+        new_state = MealChoiceState(world=next_world, time=state.time+1)
+        return KroneckerDistribution(new_state)
 
-        if s_w == 0: return 1
-        elif s_w == 1:
-            if a_r == 1: return 2
-            elif a_r == 2: return 3
-        elif s_w in [2, 3]: return 4
-        elif s_w == 4: return 4
 
-    def transition_state_id(self, s_idx, robot_action):
-        """Given the current state id and the robot action, outputs the id of the next state"""
-        s = self.get_state(s_idx)
-        return self.get_idx(self.transition_state(s, robot_action))
-
-    def get_state_features(self, s):
-        # s is the flat namedtuple state
-        features = np.zeros(self.n_world_states + 2, dtype='float32')
-        features[s.s_w] = 1
-        features[-1] = s.time
-        features[-2] = s.query
-        return features
-    
-
-def query_response_meal_choice_time_dep(time_before_feedback_available=0):
-    def time_dep_policy_fn(assistance_game, reward, **kwargs):
-        """Hardcoded query response for the time-dependent meal choice game. If in the querying state and able to give
-        feedback, the human performs action 1 if she prefers cake and action 2 if she prefers pizza. Otherwise the human
-        does action 0, corresponding to no-op"""
-        ag = assistance_game
-        policy = np.zeros((ag.state_space.n, ag.human_action_space.n))
-
-        for s_idx in range(ag.state_space.n):
-            s = ag.get_state(s_idx)
-            if s.query > 0 and s.time >= time_before_feedback_available:
-                if reward[2, 0, 1, 0] > reward[3, 0, 1, 0]:
-                    policy[s_idx, 1] = 1
-                else:
-                    policy[s_idx, 2] = 1
+    def get_reward(self, state, aH, aR, next_state, theta):
+        if next_state.world == 'end' and state.world != 'end':
+            if state.world == theta:
+                return 2  # Made the right thing
             else:
-                # no-op
-                policy[s_idx, 0] = 1
-        return policy
-    return time_dep_policy_fn
+                return -1  # Made the wrong thing
+        return 0
+
+    def get_human_action_distribution(self, obsH, prev_aR, theta):
+        h_returned = obsH.time >= self.time_when_feedback_available
+        robot_asked_query = (prev_aR == 'query')
+        return KroneckerDistribution(theta if h_returned and robot_asked_query else 'noop')
+
+    def is_terminal(self, state):
+        return state.time >= self.horizon
+
+    def close(self):
+        # if self.viewer is not None:
+        #     self.viewer.close()
+        return super().close()
+
+    def render(self, state, prev_aH, prev_aR, theta, mode='human'):
+        if prev_aR != None:
+            print('aH = {}, aR = {}'.format(prev_aH, prev_aR))
+        print('s = {}, t = {}, human wants {}'.format(state.world, state.time, theta))
 
 
-class MealChoiceTimeDependentProblem(AssistanceProblem):
-    def __init__(self, use_belief_space=True):
-        human_policy_fn = query_response_meal_choice_time_dep(time_before_feedback_available=4)
-        self.assistance_game = MealChoiceTimeDependentAG(horizon=10)
-        ag = self.assistance_game
-        if use_belief_space:
-            observation_model_fn = BeliefObservationModel
-        else:
-            # feature_extractor = lambda state : state % self.assistance_game.state_space.n
-            feature_extractor = lambda s_idx: ag.get_state_features(ag.get_state(s_idx % ag.state_space.n))
-            init_s_idx = np.where(ag.initial_state_distribution)[0][0]
-            setattr(feature_extractor, 'n', len(ag.get_state_features(ag.get_state(init_s_idx))))
-            observation_model_fn = partial(FeatureSenseObservationModel, feature_extractor=feature_extractor)
+def get_meal_choice_hardcoded_robot_policy(*args, **kwargs):
+    class Policy:
+        def predict(self, ob, state=None):
+            N, C1, C2, Q = MealChoice.ROBOT_ACTIONS
 
-        reward_model_fn_builder = partial(discrete_reward_model_fn_builder, use_belief_space=use_belief_space)
-        super().__init__(
-            assistance_game=self.assistance_game,
-            human_policy_fn=human_policy_fn,
-            observation_model_fn=observation_model_fn,
-            reward_model_fn_builder=reward_model_fn_builder,
-        )
+            # Hacky way of detecting a reset
+            if state is None:
+                self.actions = [C1, N, Q, N, 'ob', C1]
 
-    def render(self, mode='human'):
-        s = self.assistance_game.get_state(self.state % self.assistance_game.state_space.n)
-        wanted_meal = ['cake', 'pizza'][self.state // self.assistance_game.state_space.n]
-        s_w_str = ['flour', 'dough', 'cake', 'pizza', 'absorbing']
-        s_query = ' query = {}'.format(s.query) if s.query else ''
-        print('s = {}, t = {}, human wants {}'.format(s_w_str[s.s_w],  s.time, wanted_meal) + s_query)
+            aR = self.actions.pop(0)
+            if aR != 'ob':
+                return aR, 'ignored'
+            else:
+                assert ob[6] == 1 or ob[7] == 1
+                return (C1 if ob[6] == 1 else C2), 'ignored'
 
-
-
-
+    return Policy()

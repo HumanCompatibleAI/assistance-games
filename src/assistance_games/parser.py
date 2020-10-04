@@ -16,7 +16,7 @@ from gym.spaces import Discrete
 from functools import partial
 
 
-from assistance_games.core.core2 import DiscreteDistribution
+from assistance_games.core import DiscreteDistribution
 
 pomdp_parser = Lark(r"""
     pomdp_file: preamble param_list
