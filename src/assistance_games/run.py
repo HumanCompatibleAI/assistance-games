@@ -88,6 +88,7 @@ def run(
         'wardrobe' : envs.Wardrobe,
         'mealgraph' : envs.MealChoice,
         'pie_small' : envs.SmallPieGridworld,
+        'worms' : envs.WormyApples,
     }
     algos = {
         'exact' : exact_vi,
