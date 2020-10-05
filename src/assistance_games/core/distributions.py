@@ -43,18 +43,6 @@ class KroneckerDistribution(Distribution):
         return self.x
 
 
-class DictionaryDistribution(Distribution):
-    def __init__(self, x_to_prob_dict):
-        self.x_to_prob_dict = x_to_prob_dict
-
-    def support(self):
-        for x in self.x_to_prob_dict.keys():
-            yield x
-
-    def get_probability(self, x):
-        return self.x_to_prob_dict.get(x, 0.0)
-
-
 class DiscreteDistribution(Distribution):
     def __init__(self, option_prob_map):
         if type(option_prob_map) == np.ndarray:

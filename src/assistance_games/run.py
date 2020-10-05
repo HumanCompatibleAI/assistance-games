@@ -13,7 +13,11 @@ from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
 from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
-from assistance_games.core import ReducedAssistancePOMDP, ReducedAssistancePOMDPWithMatrices, ReducedFullyObservableAssistancePOMDPWithMatrices
+from assistance_games.core import (
+    ReducedAssistancePOMDP,
+    ReducedAssistancePOMDPWithMatrices,
+    ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
+)
 
 def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
     if num_episodes == -1:
@@ -97,8 +101,8 @@ def run(
     env = name_to_env_fn[env_name]()
     if algo_name not in ('exact', 'pbvi'):
         env = ReducedAssistancePOMDP(env)
-    elif env.fully_observable:
-        env = ReducedFullyObservableAssistancePOMDPWithMatrices(env)
+    elif env.fully_observable and env.deterministic:
+        env = ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices(env)
     else:
         env = ReducedAssistancePOMDPWithMatrices(env)
 

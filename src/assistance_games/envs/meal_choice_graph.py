@@ -76,7 +76,7 @@ class MealChoice(AssistancePOMDPWithMatrixSupport):
     def index_to_robot_action(self, num):
         return MealChoice.ROBOT_ACTIONS[num]
 
-    def encode_obs(self, obs_dist, prev_aH):
+    def encode_obs_distribution(self, obs_dist, prev_aH):
         # Observations are deterministic, so extract it
         (obs,) = tuple(obs_dist.support())
         world_idx = MealChoice.WORLD_STATE_TO_INDEX[obs.world]

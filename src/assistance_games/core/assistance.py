@@ -48,8 +48,8 @@ class AssistancePOMDP(ABC):
         pass
 
     @abstractmethod
-    def get_human_action_distribution(self, obsH, prev_aR, theta):
-        """Returns the human policy PiH( . | obsH, prev_aR, theta)."""
+    def get_human_action_distribution(self, obsH, aR, theta):
+        """Returns the human policy PiH( . | obsH, aR, theta)."""
         pass
 
     @abstractmethod
@@ -63,6 +63,14 @@ class AssistancePOMDP(ABC):
 
     def close(self):
         pass
+
+    def get_prob_aH(self, aH, state, aR, theta):
+        prob = 0.0
+        obsH_dist = self.get_human_obs_distribution(state)
+        for obsH in obsH_dist.support():
+            policy = self.get_human_action_distribution(obsH, aR, theta)
+            prob += obsH_dist.get_probability(obsH) * policy.get_probability(aH)
+        return prob
 
 
 class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
@@ -121,7 +129,7 @@ class AssistancePOMDPWithMatrixSupport(AssistancePOMDP):
         assert self.fully_observable
         return self.state_to_index(oR)
 
-    def get_human_action_distribution(self, obsH, prev_aR, theta):
+    def get_human_action_distribution(self, obsH, aR, theta):
         new_s = self.theta_map[theta] * self.nS + self.state_to_index(obsH)
         probs = self.human_policy[new_s, :]
         return DiscreteDistribution(dict(zip(range(self.nAH), probs)))

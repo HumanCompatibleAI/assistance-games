@@ -3,5 +3,6 @@ from assistance_games.envs.meal_choice_graph import MealChoice, get_meal_choice_
 from assistance_games.envs.pie_small_gridworld import SmallPieGridworld
 from assistance_games.envs.redblue import RedBlue
 from assistance_games.envs.wardrobe import Wardrobe
+from assistance_games.envs.wormy_apples import WormyApples
 #from assistance_games.envs.pie_gridworld import * # TODO
 #from assistance_games.envs.pie_mdp import * # TODO

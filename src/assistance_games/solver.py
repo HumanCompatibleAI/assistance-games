@@ -59,17 +59,7 @@ class POMDPPolicy:
         return action, state
 
 
-def pomdp_value_iteration(
-    pomdp,
-    *,
-    expand_beliefs_fn,
-    value_backup_fn,
-    max_iter=3,
-    num_beliefs=30,
-    max_value_iter=30,
-    limit_belief_expansion=True,
-    **kwargs,
-):
+def pbvi(pomdp, max_iter=3, num_beliefs=30, max_value_iter=30, limit_belief_expansion=True, **kwargs):
     """Value Iteration POMDP solver.
 
     Implements different exact or approximate solvers, differing on how
@@ -82,10 +72,21 @@ def pomdp_value_iteration(
     alphas = [Alpha(np.zeros(nS), None)]
     for i in range(max_iter):
         print("Iteration {}/{}".format(i, max_iter))
-        beliefs = expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
+        beliefs = pbvi_expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
         for j in range(num_value_iter):
             # print("Value iter {}/{}".format(j, num_value_iter))
-            alphas = value_backup_fn(pomdp, alphas, beliefs)
+            alphas = point_based_value_backup(pomdp, alphas, beliefs)
+
+    return POMDPPolicy(alphas, pomdp)
+
+
+def exact_vi(pomdp, max_value_iter=30, **kwargs):
+    num_value_iter = min(max_value_iter, get_effective_horizon(pomdp))
+    nS = pomdp.get_num_states()
+    alphas = [Alpha(np.zeros(nS), None)]
+    for i in range(num_value_iter):
+        print("Iteration {}/{}".format(i, num_value_iter))
+        alphas = exact_value_backup(pomdp, alphas)
 
     return POMDPPolicy(alphas, pomdp)
 
@@ -103,10 +104,6 @@ def get_effective_horizon(pomdp, epsilon=1e-3):
         R_range = R.max() - R.min()
         num_iters = int(np.ceil(np.log(epsilon / R_range) // np.log(disc)))
         return num_iters
-
-
-def none_expand_beliefs_fn(*args, **kwargs):
-    return None
 
 
 def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_expansion=True):
@@ -167,7 +164,7 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     return new_beliefs
 
 
-def exact_value_backup(pomdp, alphas, *args, **kwargs):
+def exact_value_backup(pomdp, alphas):
     """Performs exact value backup.
 
     This consists of the following phases:
@@ -389,18 +386,6 @@ def point_based_value_backup(pomdp, alphas, beliefs=None):
     new_alphas = select_best_alphas(action_alphas, beliefs)
 
     return new_alphas
-
-
-pbvi = functools.partial(
-    pomdp_value_iteration,
-    expand_beliefs_fn=pbvi_expand_beliefs_fn,
-    value_backup_fn=point_based_value_backup,
-)
-exact_vi = functools.partial(
-    pomdp_value_iteration,
-    expand_beliefs_fn=none_expand_beliefs_fn,
-    value_backup_fn=exact_value_backup,
-)
 
 
 def deep_rl_solve(

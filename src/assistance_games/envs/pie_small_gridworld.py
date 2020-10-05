@@ -122,7 +122,7 @@ class SmallPieGridworld(AssistancePOMDP):
     def is_terminal(self, state):
         return state['pie'] != None
 
-    def encode_obs(self, obs_dist, prev_aH):
+    def encode_obs_distribution(self, obs_dist, prev_aH):
         # Observations are deterministic, so extract it
         (obs,) = tuple(obs_dist.support())
         num_ingredients = len(self.counter_items) - 1
