@@ -4,7 +4,7 @@ import numpy as np
 
 import assistance_games.rendering as rendering
 from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
-from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
+from assistance_games.core import AssistancePOMDPWithMatrixSupport, DiscreteDistribution, KroneckerDistribution
 
 
 MealChoiceState = namedtuple('MealChoiceState', ['world', 'time'])
@@ -13,36 +13,36 @@ MealChoiceState = namedtuple('MealChoiceState', ['world', 'time'])
 class MealChoice(AssistancePOMDPWithMatrixSupport):
     """An environment in which R must ask H about their preferences after H returns.
 
-    A state consists of the world state and the current time. The
-    robot has to make either cake or pizza, but doesn't know which H
-    prefers, and H is currently at work. R knows when H will return,
-    and must use this information to figure out whether to guess at
-    H's preference, or to wait for H to ask about their preferences.
+    A state consists of the world state and the current time. The robot has to
+    make apple or blueberry pie, but doesn't know which H prefers, and H is
+    currently at work. R knows when H will return, and must use this information
+    to figure out whether to guess at H's preference, or to wait for H to ask
+    about their preferences.
     """
-    WORLD_STATES = ['flour', 'dough', 'cake', 'pizza', 'end']
+    WORLD_STATES = ['flour', 'dough', 'apple', 'blueberry', 'end']
     ROBOT_ACTIONS = ['noop', 'create1', 'create2', 'query']
-    HUMAN_ACTIONS = ['noop', 'cake', 'pizza']
-    THETAS = ['cake', 'pizza']
+    HUMAN_ACTIONS = ['noop', 'apple', 'blueberry']
+    THETAS = ['apple', 'blueberry']
 
     WORLD_STATE_TO_INDEX = {v:i for i, v in enumerate(WORLD_STATES)}
     ROBOT_ACTION_TO_INDEX = {v:i for i, v in enumerate(ROBOT_ACTIONS)}
     HUMAN_ACTION_TO_INDEX = {v:i for i, v in enumerate(HUMAN_ACTIONS)}
 
-    def __init__(self, time_when_feedback_available=3, horizon=6):
+    def __init__(self, feedback_time=3, horizon=6):
         self.num_world_states = len(MealChoice.WORLD_STATES)
         self.nS = len(MealChoice.WORLD_STATES) * (horizon + 1)
         self.nAH = len(MealChoice.HUMAN_ACTIONS)
         self.nAR = len(MealChoice.ROBOT_ACTIONS)
         self.nOR = self.nS  # Fully observable
-        self.time_when_feedback_available = time_when_feedback_available
+        self.time_when_feedback_available = feedback_time
         # One-hot world state, one-hot aH vector, and time
         self.num_features = self.num_world_states + 4
         init_state = MealChoiceState(world='flour', time=0)
 
         super().__init__(
-            discount=0.9,
+            discount=0.99,
             horizon=horizon,
-            theta_dist=UniformDiscreteDistribution(MealChoice.THETAS),
+            theta_dist=DiscreteDistribution({'apple': 0.875, 'blueberry': 0.125}),
             init_state_dist=KroneckerDistribution(init_state),
             observation_space=Box(
                 low=np.array([0] * self.num_features),
@@ -106,12 +106,12 @@ class MealChoice(AssistancePOMDPWithMatrixSupport):
         if aR in ['noop', 'query']:
             next_world = state.world
         elif state.world == 'dough':
-            next_world = 'cake' if aR == 'create1' else 'pizza'
+            next_world = 'apple' if aR == 'create1' else 'blueberry'
         else:
             next_world = {
                 'flour': 'dough',
-                'cake': 'end',
-                'pizza': 'end',
+                'apple': 'end',
+                'blueberry': 'end',
                 'end': 'end'
             }[state.world]
 
@@ -120,12 +120,12 @@ class MealChoice(AssistancePOMDPWithMatrixSupport):
 
 
     def get_reward(self, state, aH, aR, next_state, theta):
+        reward = 0.0
+        if aR == 'query':
+            reward -= 0.1
         if next_state.world == 'end' and state.world != 'end':
-            if state.world == theta:
-                return 2  # Made the right thing
-            else:
-                return -1  # Made the wrong thing
-        return 0
+            reward += (2.0 if state.world == theta else -1.0)
+        return reward
 
     def get_human_action_distribution(self, obsH, prev_aR, theta):
         h_returned = obsH.time >= self.time_when_feedback_available
@@ -153,7 +153,7 @@ def get_meal_choice_hardcoded_robot_policy(*args, **kwargs):
 
             # Hacky way of detecting a reset
             if state is None:
-                self.actions = [C1, N, Q, N, 'ob', C1]
+                self.actions = [C1, Q, 'ob', C1, N, N]
 
             aR = self.actions.pop(0)
             if aR != 'ob':

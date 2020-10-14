@@ -53,7 +53,7 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
     questionable Git practices, the history of the file does not include Neel's
     implementation.
     """
-    def __init__(self, two_phase=False):
+    def __init__(self, two_phase=False, discount=0.99):
         self.two_phase = two_phase
         self.nS = 6
         self.nAH = 3
@@ -62,7 +62,7 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
         self.viewer = None
 
         super().__init__(
-            discount=0.99,
+            discount=discount,
             horizon=4,
             theta_dist=UniformDiscreteDistribution(['compost', 'trash']),
             init_state_dist=KroneckerDistribution(WormyApplesState.INIT_STATE),
