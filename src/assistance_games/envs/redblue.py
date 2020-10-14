@@ -15,7 +15,6 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
         self.nAH = 2
         self.nAR = 3
         self.nOR = self.nS  # Fully observable
-        self.viewer = None
 
         layout = [
             "XXXXXX",
@@ -99,8 +98,7 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
         return False
 
     def close(self):
-        if self.viewer is not None:
-            self.viewer.close()
+        self.gridworld.close()
         return super().close()
 
     def render(self, state, prev_aH, prev_aR, theta, mode='human'):

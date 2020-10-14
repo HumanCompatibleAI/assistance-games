@@ -40,6 +40,7 @@ class ReducedAssistancePOMDP(POMDP):
 
     def close(self):
         self.apomdp.close()
+        super().close()
 
 
 class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):

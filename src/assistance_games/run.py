@@ -119,6 +119,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
     run_environment(env, policy, dt=0.5, num_episodes=num_episodes, render=render)
+    env.close()
 
 
 def str_to_dict(s):
