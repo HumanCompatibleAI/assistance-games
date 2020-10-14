@@ -87,6 +87,7 @@ def exact_vi(pomdp, max_value_iter=30, **kwargs):
     for i in range(num_value_iter):
         print("Iteration {}/{}".format(i, num_value_iter))
         alphas = exact_value_backup(pomdp, alphas)
+        print("There are now {} alpha vectors".format(len(alphas)))
 
     return POMDPPolicy(alphas, pomdp)
 

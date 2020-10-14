@@ -28,10 +28,14 @@ def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, r
             env.render(mode='human', prev_action=prev_action)
             time.sleep(dt)
 
-    rewards = []
+    def log(s, always_log=False):
+        if render or always_log:
+            print(s)
+
+    rewards, discounted_rewards = [], []
     for ep in range(num_episodes):
-        print('\n starting ep {}'.format(ep))
-        total_reward = 0
+        log('\n starting ep {}'.format(ep))
+        total_reward, total_discounted_reward, cur_discount = 0, 0, 1
         ob = env.reset()
         render_fn()
 
@@ -44,13 +48,19 @@ def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, r
             else:
                 ac, state = policy.predict(ob, state)
             ob, re, done, _ = env.step(ac)
-            print('r = {}'.format(re))
+            log('r = {}'.format(re))
             total_reward += re
+            total_discounted_reward += cur_discount * re
+            cur_discount *= env.discount
             render_fn(ac)
             step += 1
         rewards.append(total_reward)
+        discounted_rewards.append(total_discounted_reward)
 
-    print('Undiscounted rewards: {}\nAverage undiscounted reward: {}'.format(rewards, sum(rewards) / len(rewards)))
+    log('Undiscounted rewards: {}'.format(rewards))
+    log('Average undiscounted reward: {}'.format(sum(rewards) / len(rewards)), always_log=True)
+    log('Discounted rewards: {}'.format(discounted_rewards))
+    log('Average discounted reward: {}'.format(sum(discounted_rewards) / len(discounted_rewards)), always_log=True)
     return None
 
 
@@ -59,16 +69,8 @@ def get_hardcoded_policy(env, env_name, *args, **kwargs):
         return envs.get_meal_choice_hardcoded_robot_policy(env, *args, **kwargs)
     raise ValueError("No hardcoded robot policy for this environment.")
 
-def run(
-    env_name,
-    algo_name,
-    seed=0,
-    logging=True,
-    output_folder='',
-    render=True,
-    num_episodes=10,
-    **kwargs,
-):
+def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
+        render=True, num_episodes=10, **kwargs):
     if logging is not None:
         log_dir_base = './logs'
         if not output_folder:
@@ -78,16 +80,12 @@ def run(
         log_dir_base = None
         log_dir = None
 
-    def make_env2_fn(cls):
-        def helper(*args, **kwargs):
-            apomdp = cls()
-        return helper
-
     name_to_env_fn = {
+        'mealgraph' : envs.MealChoice,
+        # 'pie': envs.PieGridworld,
+        'pie_small' : envs.SmallPieGridworld,
         'redblue' : envs.RedBlue,
         'wardrobe' : envs.Wardrobe,
-        'mealgraph' : envs.MealChoice,
-        'pie_small' : envs.SmallPieGridworld,
         'worms' : envs.WormyApples,
     }
     algos = {
@@ -99,7 +97,7 @@ def run(
     }
 
     algo = algos[algo_name]
-    env = name_to_env_fn[env_name]()
+    env = name_to_env_fn[env_name](**env_kwargs)
     if algo_name not in ('exact', 'pbvi'):
         env = ReducedAssistancePOMDP(env)
     elif env.fully_observable and env.deterministic:
@@ -110,8 +108,7 @@ def run(
     if algo_name == 'deeprl':
         # Set up logging
         if log_dir is not None:
-            # This import can take 10+ seconds, so only do it
-            # if necessary
+            # This import can take 10+ seconds, so only do it if necessary
             from stable_baselines.bench import Monitor
             Path(log_dir).mkdir(parents=True, exist_ok=True)
             env = Monitor(env, log_dir)
@@ -124,10 +121,33 @@ def run(
     run_environment(env, policy, dt=0.5, num_episodes=num_episodes, render=render)
 
 
+def str_to_dict(s):
+    """Converts a string to a dictionary, used for specifying keyword args on
+    the command line. We try converting values to bool, int and float; if none
+    of these work we leave the values as strings."""
+    if s == '':
+        return {}
+
+    def convert(val):
+        if val == 'True': return True
+        if val == 'False': return False
+        try: return int(val)
+        except ValueError: pass
+        try: return float(val)
+        except ValueError: pass
+        return val
+
+    kvs = s.split(',')
+    kv_pairs = [elem.split(':') for elem in kvs]
+    result = { x:convert(y) for x, y in kv_pairs }
+    print(result)
+    return result
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
+    parser.add_argument('-k', '--env_kwargs', type=str_to_dict, default='')
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
@@ -144,6 +164,7 @@ def main():
         seed = args.seed + run_id
         run(
             env_name=args.env_name,
+            env_kwargs=args.env_kwargs,
             algo_name=args.algo_name,
             seed=seed,
             logging=args.logging,
