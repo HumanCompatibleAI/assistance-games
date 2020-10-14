@@ -2,8 +2,8 @@ from gym.spaces import Discrete, Box
 import numpy as np
 
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset
 from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
+from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_circle_renderer
 
 class RedBlue(AssistancePOMDPWithMatrixSupport):
     """Red-blue problem. Fully observable assistance POMDP.
@@ -16,6 +16,23 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
         self.nAR = 3
         self.nOR = self.nS  # Fully observable
         self.viewer = None
+
+        layout = [
+            "XXXXXX",
+            "XBXXBX",
+            "X  X X",
+            "XRXXRX",
+            "XXXXXX",
+        ][::-1] # Reverse to make the 0th index the bottom row
+        player_positions = {'robot': (4, 2), 'human': (2, 2)}
+        rendering_fns = {
+            'human': make_image_renderer('images/girl1.png'),
+            'robot': make_image_renderer('images/robot1.png'),
+            'X': make_cell_renderer((0.8, 0.75, 0.7)),
+            'R': make_circle_renderer(scale=0.7, rgb_color=(0.8, 0.2, 0.2)),
+            'B': make_circle_renderer(scale=0.7, rgb_color=(0.2, 0.2, 0.8)),
+        }
+        self.gridworld = Gridworld(layout, player_positions, rendering_fns)
 
         super().__init__(
             discount=0.9,
@@ -87,64 +104,11 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
         return super().close()
 
     def render(self, state, prev_aH, prev_aR, theta, mode='human'):
-        human_grid_pos = [(1, -1), (1, 0), (0, 0), (2, 0)]
-        robot_grid_pos = [(1, 0), (0, 0), (2, 0)]
-
-        if self.viewer is None:
-            self.viewer = rendering.Viewer(500,600)
-            self.viewer.set_bounds(-120, 120, -150, 120)
-
-            grid_side = 30
-
-            self.human_grid = rendering.Grid(start=(-110, 0), grid_side=grid_side, shape=(3, 1))
-            self.human_grid_2 = rendering.Grid(start=(-80, -30), grid_side=grid_side, shape=(1, 1))
-            self.viewer.add_geom(self.human_grid)
-            self.viewer.add_geom(self.human_grid_2)
-
-            self.robot_grid = rendering.Grid(start=(10, -15), grid_side=grid_side, shape=(3, 1))
-            self.viewer.add_geom(self.robot_grid)
-
-
-            human_red_ball_coords = self.human_grid.coords_from_pos(human_grid_pos[2])
-            human_blue_ball_coords = self.human_grid.coords_from_pos(human_grid_pos[3])
-
-            robot_red_ball_coords = self.robot_grid.coords_from_pos(robot_grid_pos[1])
-            robot_blue_ball_coords = self.robot_grid.coords_from_pos(robot_grid_pos[2])
-
-            red = (.8, .2, .2)
-            blue = (.2, .2, .8)
-            
-            radius = grid_side * 1/3
-
-            for coords, color in (
-                (human_red_ball_coords, red),
-                (human_blue_ball_coords, blue),
-                (robot_red_ball_coords, red),
-                (robot_blue_ball_coords, blue),
-            ):
-                ball = rendering.make_circle(radius)
-                ball.set_color(*color)
-                ball.add_attr(rendering.Transform(translation=coords))
-                self.viewer.add_geom(ball)
-
-            human_image = get_asset('images/girl1.png')
-            human = rendering.Image(human_image, grid_side, grid_side)
-            self.human_transform = rendering.Transform()
-            human.add_attr(self.human_transform)
-            self.viewer.add_geom(human)
-
-            robot_image = get_asset('images/robot1.png')
-            robot = rendering.Image(robot_image, grid_side, grid_side)
-            self.robot_transform = rendering.Transform()
-            robot.add_attr(self.robot_transform)
-            self.viewer.add_geom(robot)
-
+        human_grid_pos = [(2, 2), (1, 2), (1, 1), (1, 3)]
+        robot_grid_pos = [(4, 2), (4, 1), (4, 3)]
         human_state, robot_state = state
-
-        human_coords = self.human_grid.coords_from_pos(human_grid_pos[human_state])
-        robot_coords = self.robot_grid.coords_from_pos(robot_grid_pos[robot_state])
-
-        self.human_transform.set_translation(*human_coords)
-        self.robot_transform.set_translation(*robot_coords)
-
-        return self.viewer.render(return_rgb_array = mode=='rgb_array')
+        self.gridworld.set_object_positions({
+            'human': human_grid_pos[human_state],
+            'robot': robot_grid_pos[robot_state],
+        })
+        return self.gridworld.render(mode=mode, finalized=True)

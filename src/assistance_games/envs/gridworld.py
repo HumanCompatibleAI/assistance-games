@@ -15,7 +15,7 @@ class Gridworld(object):
     When used in environments, players would be represented as objects. In
     general, objects can be any hashable type.
     """
-    def __init__(self, layout, object_positions, image_fns=None, solid_objects=None):
+    def __init__(self, layout, object_positions, rendering_fns=None, solid_objects=None):
         """Sets up the gridworld.
 
         layout: Sequence of sequences of strings. If layout[y][x] == " ", that
@@ -33,7 +33,7 @@ class Gridworld(object):
         self.layout = layout
         self.num_objects = len(object_positions)
         self.starting_positions = copy.deepcopy(object_positions)
-        self.image_fns = {} if image_fns is None else image_fns
+        self.rendering_fns = {} if rendering_fns is None else rendering_fns
         self.solid_objects = set([]) if solid_objects is None else solid_objects
         self.viewer = None
         self.reset()
@@ -99,7 +99,7 @@ class Gridworld(object):
         self.object_positions = self.functional_move(obj, direction)
 
     def render(self, mode='human', finalized=False):
-        # TODO: Currently this makes everything squarish
+        # TODO: Make the viewer grid adapt to the gridworld dimensions
         h, w = self.height, self.width
         cell_shape = (200.0 / w, 200.0 / h)
         if self.viewer is None:
@@ -113,12 +113,19 @@ class Gridworld(object):
             for y in range(self.height):
                 for x in range(self.width):
                     wall_type = self.layout[y][x]
-                    if wall_type in self.image_fns:
-                        self.image_fns[wall_type](self.viewer, self.grid, (x, y), cell_shape)
+                    if wall_type in self.rendering_fns:
+                        self.rendering_fns[wall_type]()(self.viewer, self.grid, (x, y), cell_shape)
+
+            self.object_renderers = {}
+            for obj, pos in self.object_positions.items():
+                if obj in self.rendering_fns:
+                    obj_renderer = self.rendering_fns[obj]()
+                    self.object_renderers[obj] = obj_renderer
 
         for obj, pos in self.object_positions.items():
-            if obj in self.image_fns:
-                self.image_fns[obj](self.viewer, self.grid, pos, cell_shape)
+            if obj in self.object_renderers:
+                fn = self.object_renderers[obj]
+                fn(self.viewer, self.grid, pos, cell_shape)
 
         if finalized:
             return self.viewer.render(return_rgb_array = mode=='rgb_array')
@@ -128,32 +135,58 @@ class Gridworld(object):
             self.viewer.close()
 
 
-def make_rendering_fn(asset_name, scale=None, offset=None, rgb_color=None):
-    if scale is None: scale = 1
+# TODO: This has become a fairly complicated interface, maybe switch to
+# object-oriented style
+def make_rendering_fn(creation_fn, offset=None, rgb_color=None):
     if offset is None: offset = (0, 0)
-    image, transform = None, None
 
-    def fn(viewer, grid, pos, cell_shape):
-        nonlocal image
-        nonlocal transform
-        cell_w, cell_h = cell_shape
-        if image is None:
-            filename = get_asset(asset_name)
-            image = rendering.Image(filename, cell_w * scale, cell_h * scale)
-            transform = rendering.Transform()
-            image.add_attr(transform)
-            if rgb_color is not None:
-                image.set_color(*rgb_color)
-            viewer.add_geom(image)
+    def creator():
+        transform = None
+        def fn(viewer, grid, pos, cell_shape):
+            nonlocal transform
+            if transform is None:
+                thing = creation_fn(viewer, grid, pos, cell_shape)
+                transform = rendering.Transform()
+                thing.add_attr(transform)
+                if rgb_color is not None:
+                    thing.set_color(*rgb_color)
+                viewer.add_geom(thing)
 
-        x, y = pos
-        offset_x, offset_y = offset
-        x, y = x + offset_x, y + offset_y
-        coords = grid.coords_from_pos((x, y))
-        transform.set_translation(*coords)
+            cell_w, cell_h = cell_shape
+            x, y = pos
+            offset_x, offset_y = offset
+            x, y = x + offset_x, y + offset_y
+            coords = grid.coords_from_pos((x, y))
+            transform.set_translation(*coords)
+        return fn
+    return creator
 
-    return fn
-        
+
+def make_image_renderer(asset_name, scale=None, offset=None, rgb_color=None):
+    if scale is None: scale = 1
+
+    def creation_fn(viewer, grid, pos, cell_shape):
+        w, h = cell_shape
+        filename = get_asset(asset_name)
+        return rendering.Image(filename, w * scale, h * scale)
+
+    return make_rendering_fn(creation_fn, offset=offset, rgb_color=rgb_color)
+
+
+def make_cell_renderer(rgb_color):
+    def creation_fn(viewer, grid, pos, cell_shape):
+        w, h = cell_shape
+        x, y = w / 2, h / 2
+        return rendering.make_polygon([(-x, -y), (x, -y),(x, y),(-x, y)])
+    return make_rendering_fn(creation_fn, rgb_color=rgb_color)
+
+
+def make_circle_renderer(scale=1, offset=None, rgb_color=None):
+    def creation_fn(viewer, grid, pos, cell_shape):
+        radius = scale * (min(*cell_shape) / 2)
+        return rendering.make_circle(radius)
+    return make_rendering_fn(creation_fn, offset=offset, rgb_color=rgb_color)
+
 
 class Direction(object):
     """A class that contains the five actions available in Gridworlds.

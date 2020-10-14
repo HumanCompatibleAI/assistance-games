@@ -4,7 +4,7 @@ import numpy as np
 
 import assistance_games.rendering as rendering
 from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
-from assistance_games.envs.gridworld import Gridworld, Direction, make_rendering_fn
+from assistance_games.envs.gridworld import Gridworld, Direction, make_image_renderer
 
 
 class Wardrobe(AssistancePOMDPWithMatrixSupport):
@@ -48,12 +48,12 @@ class Wardrobe(AssistancePOMDPWithMatrixSupport):
             'R': (self.size - 1, 0),
             'W': (1, 1),
         }
-        image_fns = {
-            'H': make_rendering_fn('images/girl1.png'),
-            'R': make_rendering_fn('images/robot1.png'),
-            'W': make_rendering_fn('images/wardrobe1.png'),
+        rendering_fns = {
+            'H': make_image_renderer('images/girl1.png'),
+            'R': make_image_renderer('images/robot1.png'),
+            'W': make_image_renderer('images/wardrobe1.png'),
         }
-        self.gridworld = Gridworld(layout, initial_state, image_fns, set(['W']))
+        self.gridworld = Gridworld(layout, initial_state, rendering_fns, set(['W']))
 
         w_size = size
         super().__init__(
