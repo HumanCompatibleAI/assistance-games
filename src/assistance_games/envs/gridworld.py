@@ -22,11 +22,11 @@ class Gridworld(object):
             space is empty, otherwise it is a wall with type layout[y][x].
         object_positions: Dictionary mapping objects to positions (x, y). These
             are the positions at which each of the N objects starts.
-        image_fns: Dictionary mapping objects and wall types to functions that
-            given a rendering Viewer, position, height, and width, renders those
-            objects and wall types. It is not required that every object and
-            wall type has a corresponding renderer. make_rendering_fn (below)
-            can be used to construct functions for common use cases.
+        image_fns: Dictionary mapping objects and wall types to lists of
+            functions that render those objects and wall types. It is not
+            required that every object and wall type be present.
+            make_rendering_fn (below) can be used to construct functions for
+            common use cases.
         """
         self.height = len(layout)
         self.width = len(layout[0])
@@ -40,9 +40,13 @@ class Gridworld(object):
 
     def reset(self):
         self.object_positions = copy.deepcopy(self.starting_positions)
+        self.object_orientations = {obj : Direction.NORTH for obj in self.object_positions.keys()}
 
     def set_object_positions(self, object_positions):
         self.object_positions = copy.deepcopy(object_positions)
+
+    def set_object_orientations(self, object_orientations):
+        self.object_orientations = copy.deepcopy(object_orientations)
 
     def get_layout_type(self, pos):
         x, y = pos
@@ -66,37 +70,57 @@ class Gridworld(object):
         return all_states
 
     def get_move_location(self, obj, direction, object_positions=None):
-        if object_positions is None:
-            object_positions = self.object_positions
+        if object_positions is None: object_positions = self.object_positions
         pos = object_positions[obj]
         return Direction.move_in_direction(pos, direction)
 
-    def functional_move(self, obj, direction, object_positions=None):
-        """Moves obj in direction if possible, otherwise a noop."""
+    def get_facing_position(self, obj, object_positions=None, object_orientations=None):
+        if object_positions is None: object_positions = self.object_positions
+        if object_orientations is None: object_orientations = self.object_orientations
+
+        x, y = object_positions[obj]
+        dx, dy = object_orientations[obj]
+        return (x + dx, y + dy)
+
+    def get_facing_wall_type(self, obj, object_positions=None, object_orientations=None):
+        x, y = self.get_facing_position(obj, object_positions, object_orientations)
+        return self.layout[y][x]
+
+    def functional_move(self, obj, direction, object_positions, object_orientations=None):
+        """Moves obj in direction if possible, and returns the new state.
+
+        Always returns the new object positions (making a copy, rather than
+        modifying in place). If object_orientations is not None, also returns
+        the new object orientations.
+        """
         if direction not in Direction.ALL_DIRECTIONS:
             raise ValueError("Illegal direction {}".format(direction))
 
-        if object_positions is None:
-            object_positions = self.object_positions
+        new_positions = copy.deepcopy(object_positions)
+        new_orientations = copy.deepcopy(object_orientations)
+        if direction != Direction.STAY and new_orientations is not None:
+            new_orientations[obj] = direction
 
         pos = object_positions[obj]
         new_pos = Direction.move_in_direction(pos, direction)
         if new_pos == pos or not self.is_free_location(new_pos):
-            return copy.deepcopy(object_positions)
+            return new_positions, new_orientations
 
         for other_obj, other_pos in object_positions.items():
             if other_obj == obj:
                 continue
             if other_pos == new_pos and \
                (obj in self.solid_objects or other_obj in self.solid_objects):
-                return copy.deepcopy(object_positions)
+                return new_positions, new_orientations
 
-        new_positions = copy.deepcopy(object_positions)
         new_positions[obj] = new_pos
-        return new_positions
+        return new_positions, new_orientations
+
 
     def move(self, obj, direction):
-        self.object_positions = self.functional_move(obj, direction)
+        """Moves obj in direction if possible, otherwise a noop."""
+        self.object_positions, self.object_orientations = self.functional_move(
+            obj, direction, self.object_positions, self.object_orientations)
 
     def render(self, mode='human', finalized=False):
         # TODO: Make the viewer grid adapt to the gridworld dimensions
@@ -104,8 +128,8 @@ class Gridworld(object):
         cell_shape = (200.0 / w, 200.0 / h)
         if self.viewer is None:
             import assistance_games.rendering as rendering
-            self.viewer = rendering.Viewer(500, 600)
-            self.viewer.set_bounds(-120, 120, -150, 120)
+            self.viewer = rendering.Viewer(600, 800)
+            self.viewer.set_bounds(-120, 120, -120, 250)
 
             self.grid = rendering.Grid(start=(-100, -100), end=(100, 100), shape=(w, h))
             self.viewer.add_geom(self.grid)
@@ -113,18 +137,17 @@ class Gridworld(object):
             for y in range(self.height):
                 for x in range(self.width):
                     wall_type = self.layout[y][x]
-                    if wall_type in self.rendering_fns:
-                        self.rendering_fns[wall_type]()(self.viewer, self.grid, (x, y), cell_shape)
+                    for fn in self.rendering_fns.get(wall_type, []):
+                        fn()(self.viewer, self.grid, (x, y), cell_shape)
 
             self.object_renderers = {}
             for obj, pos in self.object_positions.items():
-                if obj in self.rendering_fns:
-                    obj_renderer = self.rendering_fns[obj]()
-                    self.object_renderers[obj] = obj_renderer
+                self.object_renderers[obj] = []
+                for fn in self.rendering_fns.get(obj, []):
+                    self.object_renderers[obj].append(fn())
 
         for obj, pos in self.object_positions.items():
-            if obj in self.object_renderers:
-                fn = self.object_renderers[obj]
+            for fn in self.object_renderers[obj]:
                 fn(self.viewer, self.grid, pos, cell_shape)
 
         if finalized:
@@ -181,10 +204,11 @@ def make_cell_renderer(rgb_color):
     return make_rendering_fn(creation_fn, rgb_color=rgb_color)
 
 
-def make_circle_renderer(scale=1, offset=None, rgb_color=None):
+def make_ellipse_renderer(scale_width=1, scale_height=None, offset=None, rgb_color=None):
+    if scale_height is None: scale_height = scale_width
     def creation_fn(viewer, grid, pos, cell_shape):
-        radius = scale * (min(*cell_shape) / 2)
-        return rendering.make_circle(radius)
+        w, h = cell_shape
+        return rendering.make_ellipse(scale_width * w/2, scale_height * h/2)
     return make_rendering_fn(creation_fn, offset=offset, rgb_color=rgb_color)
 
 
@@ -194,8 +218,8 @@ class Direction(object):
     Includes definitions of the actions as well as utility functions for
     manipulating them or applying them.
     """
-    NORTH = (0, -1)
-    SOUTH = (0, 1)
+    NORTH = (0, 1)
+    SOUTH = (0, -1)
     EAST  = (1, 0)
     WEST  = (-1, 0)
     STAY = (0, 0)

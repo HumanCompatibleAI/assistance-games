@@ -19,7 +19,7 @@ from assistance_games.core import (
     ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
 )
 
-def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
+def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
     if num_episodes == -1:
         num_episodes = int(1e6)
 
@@ -51,7 +51,7 @@ def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, r
             log('r = {}'.format(re))
             total_reward += re
             total_discounted_reward += cur_discount * re
-            cur_discount *= env.discount
+            cur_discount *= discount
             render_fn(ac)
             step += 1
         rewards.append(total_reward)
@@ -67,6 +67,8 @@ def run_environment(env, policy=None, num_episodes=10, dt=0.01, max_steps=100, r
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
     if env_name == 'mealgraph':
         return envs.get_meal_choice_hardcoded_robot_policy(env, *args, **kwargs)
+    elif env_name == 'pie_small':
+        return envs.get_small_pie_hardcoded_robot_policy(env, *args, **kwargs)
     raise ValueError("No hardcoded robot policy for this environment.")
 
 def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
@@ -98,6 +100,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
 
     algo = algos[algo_name]
     env = name_to_env_fn[env_name](**env_kwargs)
+    discount = env.discount
     if algo_name not in ('exact', 'pbvi'):
         env = ReducedAssistancePOMDP(env)
     elif env.fully_observable and env.deterministic:
@@ -118,7 +121,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     print('\n Running algorithm {} with seed {}'.format(algo_name, seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, policy, dt=0.5, num_episodes=num_episodes, render=render)
+    run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render=render)
     env.close()
 
 

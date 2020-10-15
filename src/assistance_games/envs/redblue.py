@@ -3,7 +3,7 @@ import numpy as np
 
 import assistance_games.rendering as rendering
 from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
-from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_circle_renderer
+from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_ellipse_renderer
 
 class RedBlue(AssistancePOMDPWithMatrixSupport):
     """Red-blue problem. Fully observable assistance POMDP.
@@ -25,11 +25,11 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
         ][::-1] # Reverse to make the 0th index the bottom row
         player_positions = {'robot': (4, 2), 'human': (2, 2)}
         rendering_fns = {
-            'human': make_image_renderer('images/girl1.png'),
-            'robot': make_image_renderer('images/robot1.png'),
-            'X': make_cell_renderer((0.8, 0.75, 0.7)),
-            'R': make_circle_renderer(scale=0.7, rgb_color=(0.8, 0.2, 0.2)),
-            'B': make_circle_renderer(scale=0.7, rgb_color=(0.2, 0.2, 0.8)),
+            'human': [make_image_renderer('images/girl1.png')],
+            'robot': [make_image_renderer('images/robot1.png')],
+            'X': [make_cell_renderer((0.8, 0.75, 0.7))],
+            'R': [make_ellipse_renderer(scale_width=0.7, rgb_color=(0.8, 0.2, 0.2))],
+            'B': [make_ellipse_renderer(scale_width=0.7, rgb_color=(0.2, 0.2, 0.8))],
         }
         self.gridworld = Gridworld(layout, player_positions, rendering_fns)
 

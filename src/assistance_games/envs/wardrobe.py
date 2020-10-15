@@ -49,9 +49,9 @@ class Wardrobe(AssistancePOMDPWithMatrixSupport):
             'W': (1, 1),
         }
         rendering_fns = {
-            'H': make_image_renderer('images/girl1.png'),
-            'R': make_image_renderer('images/robot1.png'),
-            'W': make_image_renderer('images/wardrobe1.png'),
+            'H': [make_image_renderer('images/girl1.png')],
+            'R': [make_image_renderer('images/robot1.png')],
+            'W': [make_image_renderer('images/wardrobe1.png')],
         }
         self.gridworld = Gridworld(layout, initial_state, rendering_fns, set(['W']))
 
@@ -112,9 +112,9 @@ class Wardrobe(AssistancePOMDPWithMatrixSupport):
         next_robot_pos = self.gridworld.get_move_location('R', aR_direction, state)
 
         if (aH == aR and next_human_pos == state['W'] and next_robot_pos == state['W']):
-            state = self.gridworld.functional_move('W', aH_direction, state)
-        state = self.gridworld.functional_move('R', aR_direction, state)
-        state = self.gridworld.functional_move('H', aH_direction, state)
+            state, _ = self.gridworld.functional_move('W', aH_direction, state)
+        state, _ = self.gridworld.functional_move('R', aR_direction, state)
+        state, _ = self.gridworld.functional_move('H', aH_direction, state)
         return KroneckerDistribution(state)
 
     def get_reward(self, state, aH, aR, next_state, theta):
