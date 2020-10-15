@@ -102,6 +102,9 @@ class RedBlue(AssistancePOMDPWithMatrixSupport):
         return super().close()
 
     def render(self, state, prev_aH, prev_aR, theta, mode='human'):
+        if not self.gridworld.is_renderer_initialized():
+            self.gridworld.initialize_renderer(viewer_bounds=(600, 500))
+
         human_grid_pos = [(2, 2), (1, 2), (1, 1), (1, 3)]
         robot_grid_pos = [(4, 2), (4, 1), (4, 3)]
         human_state, robot_state = state

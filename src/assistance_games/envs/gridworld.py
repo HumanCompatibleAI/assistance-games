@@ -122,30 +122,42 @@ class Gridworld(object):
         self.object_positions, self.object_orientations = self.functional_move(
             obj, direction, self.object_positions, self.object_orientations)
 
-    def render(self, mode='human', finalized=False):
+    def is_renderer_initialized(self):
+        return self.viewer is not None
+
+    def initialize_renderer(self, viewer_bounds=(600, 600), grid_offsets=(0, 0, 0, 0)):
+        assert not self.is_renderer_initialized()
         # TODO: Make the viewer grid adapt to the gridworld dimensions
         h, w = self.height, self.width
         cell_shape = (200.0 / w, 200.0 / h)
-        if self.viewer is None:
-            import assistance_games.rendering as rendering
-            self.viewer = rendering.Viewer(600, 800)
-            self.viewer.set_bounds(-120, 120, -120, 250)
 
-            self.grid = rendering.Grid(start=(-100, -100), end=(100, 100), shape=(w, h))
-            self.viewer.add_geom(self.grid)
+        import assistance_games.rendering as rendering
+        self.viewer = rendering.Viewer(*viewer_bounds)
+        bounds = (-120, 120, -120, 120)
+        bounds = tuple((b + o for b, o in zip(bounds, grid_offsets)))
+        self.viewer.set_bounds(*bounds)
 
-            for y in range(self.height):
-                for x in range(self.width):
-                    wall_type = self.layout[y][x]
-                    for fn in self.rendering_fns.get(wall_type, []):
-                        fn()(self.viewer, self.grid, (x, y), cell_shape)
+        self.grid = rendering.Grid(start=(-100, -100), end=(100, 100), shape=(w, h))
+        self.viewer.add_geom(self.grid)
 
-            self.object_renderers = {}
-            for obj, pos in self.object_positions.items():
-                self.object_renderers[obj] = []
-                for fn in self.rendering_fns.get(obj, []):
-                    self.object_renderers[obj].append(fn())
+        for y in range(self.height):
+            for x in range(self.width):
+                wall_type = self.layout[y][x]
+                for fn in self.rendering_fns.get(wall_type, []):
+                    fn()(self.viewer, self.grid, (x, y), cell_shape)
 
+        self.object_renderers = {}
+        for obj, pos in self.object_positions.items():
+            self.object_renderers[obj] = []
+            for fn in self.rendering_fns.get(obj, []):
+                self.object_renderers[obj].append(fn())
+
+    def render(self, mode='human', finalized=False):
+        if not self.is_renderer_initialized():
+            self.initialize_renderer()
+
+        h, w = self.height, self.width
+        cell_shape = (200.0 / w, 200.0 / h)
         for obj, pos in self.object_positions.items():
             for fn in self.object_renderers[obj]:
                 fn(self.viewer, self.grid, pos, cell_shape)

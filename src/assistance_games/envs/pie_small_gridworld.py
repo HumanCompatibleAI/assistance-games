@@ -183,11 +183,10 @@ class SmallPieGridworld(AssistancePOMDP):
             '0' : partial(make_image_transform, 'apple-pie1.png', c=(0.7, 0.3, 0.2)),
         }
 
-        initialize = self.gridworld.viewer is None
         self.gridworld.set_object_positions({'R': state['pos'], 'H': (1, 3)})
-        self.gridworld.render(mode=mode)
 
-        if initialize:
+        if not self.gridworld.is_renderer_initialized():
+            self.gridworld.initialize_renderer(viewer_bounds=(600, 800), grid_offsets=(0, 0, 0, 130))
             self.human_transform = rendering.Transform()
             self.robot_transform = rendering.Transform()
 
@@ -215,10 +214,10 @@ class SmallPieGridworld(AssistancePOMDP):
                 pie_transform.set_translation(-gw, gh)
                 self.pies.append(pie)
 
+        self.gridworld.render(mode=mode)
 
         human_coords = self.gridworld.grid.coords_from_pos((1, 3))
         self.human_transform.set_translation(*human_coords)
-
         robot_coords = self.gridworld.grid.coords_from_pos(state['pos'])
         self.robot_transform.set_translation(*robot_coords)
 
