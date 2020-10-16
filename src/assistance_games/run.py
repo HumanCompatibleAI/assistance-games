@@ -65,11 +65,14 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
 
 
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
-    if env_name == 'mealgraph':
-        return envs.get_meal_choice_hardcoded_robot_policy(env, *args, **kwargs)
-    elif env_name == 'pie_small':
-        return envs.get_small_pie_hardcoded_robot_policy(env, *args, **kwargs)
-    raise ValueError("No hardcoded robot policy for this environment.")
+    hardcoded_policies = {
+        'cake_or_pie': envs.get_cake_or_pie_hardcoded_robot_policy,
+        'mealgraph': envs.get_meal_choice_hardcoded_robot_policy,
+        'pie_small': envs.get_small_pie_hardcoded_robot_policy,
+    }
+    if env_name not in hardcoded_policies:
+        raise ValueError("No hardcoded robot policy for this environment.")
+    return hardcoded_policies[env_name](env, *args, **kwargs)
 
 def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         render=True, num_episodes=10, **kwargs):
@@ -83,8 +86,8 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         log_dir = None
 
     name_to_env_fn = {
+        'cake_or_pie': envs.CakeOrPieGridworld,
         'mealgraph' : envs.MealChoice,
-        # 'pie': envs.PieGridworld,
         'pie_small' : envs.SmallPieGridworld,
         'redblue' : envs.RedBlue,
         'wardrobe' : envs.Wardrobe,

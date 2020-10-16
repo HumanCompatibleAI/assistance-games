@@ -52,6 +52,14 @@ class Gridworld(object):
         x, y = pos
         return self.layout[y][x]
 
+    def get_layout_positions(self, wall_type):
+        result = []
+        for y, row in enumerate(self.layout):
+            for x, cell in enumerate(row):
+                if cell == wall_type:
+                    result.append((x, y))
+        return result
+
     def is_in_bounds(self, pos):
         x, y = pos
         return (0 <= x < self.width) and (0 <= y < self.height)
@@ -258,3 +266,17 @@ class Direction(object):
     @staticmethod
     def get_direction_from_number(number):
         return Direction.INDEX_TO_DIRECTION[number]
+
+    @staticmethod
+    def get_component_directions(composite_direction):
+        dx, dy = composite_direction
+        assert dx != 0 or dy != 0
+
+        def sign(num):
+            return 0 if num == 0 else (1 if num > 0 else -1)
+
+        if dx == 0:
+            return [(0, sign(dy))]
+        elif dy == 0:
+            return [(sign(dx), 0)]
+        return [(sign(dx), 0), (0, sign(dy))]

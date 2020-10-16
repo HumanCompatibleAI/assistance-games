@@ -2,8 +2,6 @@ from collections import namedtuple
 from gym.spaces import Discrete, Box
 import numpy as np
 
-import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
 from assistance_games.core import AssistancePOMDPWithMatrixSupport, DiscreteDistribution, KroneckerDistribution
 
 

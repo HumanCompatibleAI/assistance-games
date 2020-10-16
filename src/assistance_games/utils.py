@@ -44,11 +44,3 @@ def force_dense(arr):
         return arr.todense()
     else:
         return arr
-
-MOVEMENT_ACTIONS = [
-    (0, 1),
-    (0, -1),
-    (1, 0),
-    (-1, 0),
-    (0, 0),
-]

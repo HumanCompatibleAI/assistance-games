@@ -4,7 +4,7 @@ from gym.spaces import Discrete, Box
 import numpy as np
 
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset, MOVEMENT_ACTIONS
+from assistance_games.utils import get_asset
 from assistance_games.core import AssistancePOMDP, UniformContinuousDistribution, KroneckerDistribution
 from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_ellipse_renderer, Direction
 
@@ -17,7 +17,7 @@ class SmallPieGridworld(AssistancePOMDP):
             "X     P",
             "X     X",
             "XXCBAXX",
-        ][::-1] # Reverse to make the 0th index the bottom row
+        ][::-1] # Reverse so that index 0 means what is visually the bottom row
         player_positions = {'R': (1, 1), 'H': (1, 3)}
         rendering_fns = {
             'H': [make_ellipse_renderer(scale_width=0.8, scale_height=0.56, offset=(-1, 1), rgb_color=(0.9, 0.9, 0.9)),
@@ -71,7 +71,6 @@ class SmallPieGridworld(AssistancePOMDP):
 
     def get_transition_distribution(self, state, aH, aR):
         s = deepcopy(state)
-        print(s)
         obj_pos = {'H': (1, 3), 'R': state['pos']}
         obj_or = {'H': Direction.NORTH, 'R': state['orientation']}
 
