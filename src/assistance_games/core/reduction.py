@@ -36,7 +36,7 @@ class ReducedAssistancePOMDP(POMDP):
 
     def render(self, mode='human', prev_action=None):
         s, prev_aH, theta = self.state
-        self.apomdp.render(s, prev_aH, prev_action, theta, mode=mode)
+        return self.apomdp.render(s, prev_aH, prev_action, theta, mode=mode)
 
     def close(self):
         self.apomdp.close()
@@ -160,7 +160,7 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
     def render(self, mode='human', prev_action=None):
         if prev_action != None:
             prev_action = self.apomdp.index_to_robot_action(prev_action)
-        super().render(mode=mode, prev_action=prev_action)
+        return super().render(mode=mode, prev_action=prev_action)
 
 
 class ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices(ReducedAssistancePOMDPWithMatrices):

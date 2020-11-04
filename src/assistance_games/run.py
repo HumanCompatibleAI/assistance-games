@@ -19,25 +19,28 @@ from assistance_games.core import (
     ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
 )
 
-def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_steps=100, render=True):
+def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_steps=100, render_mode='human'):
     if num_episodes == -1:
         num_episodes = int(1e6)
 
     def render_fn(prev_action=None):
-        if render:
-            env.render(mode='human', prev_action=prev_action)
+        if render_mode is not None:
+            result = env.render(mode=render_mode, prev_action=prev_action)
             time.sleep(dt)
+            return result
 
-    def log(s, always_log=False):
-        if render or always_log:
+    def log(s):
+        if render_mode is not None:
             print(s)
 
+    render_results = []
     rewards, discounted_rewards = [], []
     for ep in range(num_episodes):
         log('\n starting ep {}'.format(ep))
         total_reward, total_discounted_reward, cur_discount = 0, 0, 1
         ob = env.reset()
-        render_fn()
+        render_results.append([])
+        render_results[ep].append(render_fn())
 
         state = None
         done = False
@@ -48,21 +51,34 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
             else:
                 ac, state = policy.predict(ob, state)
             ob, re, done, _ = env.step(ac)
+            if hasattr(env, "get_original_reward"):
+                re = env.get_original_reward()[0]
             log('r = {}'.format(re))
             total_reward += re
             total_discounted_reward += cur_discount * re
             cur_discount *= discount
-            render_fn(ac)
+            render_results[ep].append(render_fn(ac))
             step += 1
         rewards.append(total_reward)
         discounted_rewards.append(total_discounted_reward)
 
     log('Undiscounted rewards: {}'.format(rewards))
-    log('Average undiscounted reward: {}'.format(sum(rewards) / len(rewards)), always_log=True)
+    print('Average undiscounted reward: {}'.format(sum(rewards) / len(rewards)))
     log('Discounted rewards: {}'.format(discounted_rewards))
-    log('Average discounted reward: {}'.format(sum(discounted_rewards) / len(discounted_rewards)), always_log=True)
-    return None
+    print('Average discounted reward: {}'.format(sum(discounted_rewards) / len(discounted_rewards)))
+    return render_results
 
+
+def get_env_fn(env_name):
+    name_to_env_fn = {
+        'cake_or_pie': envs.CakeOrPieGridworld,
+        'mealgraph' : envs.MealChoice,
+        'pie_small' : envs.SmallPieGridworld,
+        'redblue' : envs.RedBlue,
+        'wardrobe' : envs.Wardrobe,
+        'worms' : envs.WormyApples,
+    }
+    return name_to_env_fn[env_name]
 
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
     hardcoded_policies = {
@@ -73,6 +89,21 @@ def get_hardcoded_policy(env, env_name, *args, **kwargs):
     if env_name not in hardcoded_policies:
         raise ValueError("No hardcoded robot policy for this environment.")
     return hardcoded_policies[env_name](env, *args, **kwargs)
+
+
+# Doesn't always work, since it requires that there are only 255 colors in each frame
+def save_results_to_gif(results, filename, fps=5, end_of_trajectory_pause=3):
+    from array2gif import write_gif
+    dataset = []
+    for episode in results:
+        for frame in episode:
+            dataset.append(frame)
+        for _ in range(end_of_trajectory_pause):
+            dataset.append(frame)
+
+    import pdb; pdb.set_trace()
+    write_gif(dataset, filename, fps=fps)
+
 
 def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         render=True, num_episodes=10, **kwargs):
@@ -85,14 +116,6 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         log_dir_base = None
         log_dir = None
 
-    name_to_env_fn = {
-        'cake_or_pie': envs.CakeOrPieGridworld,
-        'mealgraph' : envs.MealChoice,
-        'pie_small' : envs.SmallPieGridworld,
-        'redblue' : envs.RedBlue,
-        'wardrobe' : envs.Wardrobe,
-        'worms' : envs.WormyApples,
-    }
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
@@ -100,9 +123,8 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         'random' : lambda *args, **kwargs : None,
         'hardcoded' : partial(get_hardcoded_policy, env_name=env_name),
     }
-
     algo = algos[algo_name]
-    env = name_to_env_fn[env_name](**env_kwargs)
+    env = get_env_fn(env_name)(**env_kwargs)
     discount = env.discount
     if algo_name not in ('exact', 'pbvi'):
         env = ReducedAssistancePOMDP(env)
@@ -124,7 +146,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     print('\n Running algorithm {} with seed {}'.format(algo_name, seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render=render)
+    run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
     env.close()
 
 

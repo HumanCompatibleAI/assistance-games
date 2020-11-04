@@ -15,11 +15,15 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
     See RecipeGridworld below for an example of how to use this class.
     """
+    EMPTY_HAND = ''
+
     def __init__(self, gridworld, initial_state, ingredients, recipes, recipe_distribution):
+        initial_state['T'] = 0
         self.gridworld = gridworld
         self.ingredients = ingredients
         self.ingredient_to_index = {v:i for i, v in enumerate(self.ingredients)}
         self.recipes = [tuple(sorted(recipe)) for recipe in recipes]
+        assert all(self._is_unique(r) for r in self.recipes), "Recipes should not have duplicates"
         w, h = self.gridworld.width, self.gridworld.height
         stay = Direction.get_number_from_direction(Direction.STAY)
         super().__init__(
@@ -59,37 +63,78 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
         s['R'] = handle_action('R', s['R'], aR)
         s['H'] = handle_action('H', s['H'], aH)
+        s['T'] += 1
         return KroneckerDistribution(s)
 
     def _interact_hand(self, player_state, wall_type, state):
         # Can pick up an item
-        if wall_type in self.ingredients and player_state['hand'] == '':
+        if wall_type in self.ingredients and player_state['hand'] == self.EMPTY_HAND:
             return wall_type
         # Can put an item on a plate or back in its location
         elif wall_type in (player_state['hand'], 'P'):
-            return ''
+            return self.EMPTY_HAND
         return player_state['hand']
 
     def _interact_plate(self, player_state, wall_type, state):
-        if player_state['hand'] != '' and wall_type == 'P' and len(state['plate']) < 4:
+        if player_state['hand'] != self.EMPTY_HAND and wall_type == 'P' and len(state['plate']) < 4:
             return tuple(sorted(state['plate'] + (player_state['hand'],)))
         return state['plate']
 
     def _interact_recipe(self, player_state, wall_type, state):
-        if player_state['hand'] == '' and wall_type == 'P' and state['plate'] in self.recipes:
+        if player_state['hand'] == self.EMPTY_HAND and wall_type == 'P' and state['plate'] in self.recipes:
             return state['plate']
         return None
 
     def get_reward(self, state, aH, aR, next_state, theta):
-        if next_state['recipe'] is None:
+        if self.is_terminal(next_state):
+            # Pretend like you take another action that goes to an absorbing
+            # state with phi = 0 that you stay in forever. This ends up
+            # effectively cancelling out the contribution of next_state.
+            shaping = - self.phi(state, theta)
+        else:
+            shaping = self.discount * self.phi(next_state, theta) - self.phi(state, theta)
+
+        base_reward = 0
+        if next_state['recipe'] == self.recipes[theta]:
+            base_reward = 10
+        elif next_state['recipe'] is not None:
+            base_reward = 1
+        return base_reward + shaping
+
+    # Potential shaping. Finite horizon means the reward shaping
+    # theorem does not apply, so the scale needs to be kept below the
+    # possible rewards (so below 1).
+    def phi(self, state, theta):
+        if state['recipe'] is not None:
             return 0
-        return 10 if self.recipes[theta] == next_state['recipe'] else 1
+        if not self._is_unique(state['plate']):
+            return 0
+
+        goal_recipe = set(self.recipes[theta])
+        if not set(state['plate']).issubset(goal_recipe):
+            return 0
+        ingredient_bonuses = len(state['plate'])  # +1 for each correct plate ingredient
+        ingredients_accounted_for = list(deepcopy(state['plate']))
+        h_ingredient, r_ingredient = state['H']['hand'], state['R']['hand']
+        # Ensure these ingredients are useful and unique
+        def is_bad(hand):
+            return (hand != self.EMPTY_HAND) and (hand in state['plate'] or hand not in goal_recipe)
+        if is_bad(h_ingredient) or is_bad(r_ingredient) or \
+           (r_ingredient != self.EMPTY_HAND and h_ingredient == r_ingredient):
+            return 0
+
+        if h_ingredient != self.EMPTY_HAND: ingredient_bonuses += 0.5
+        if r_ingredient != self.EMPTY_HAND: ingredient_bonuses += 0.5
+        return ingredient_bonuses * 1.0 / (len(goal_recipe) + 1)
+
+    def _is_unique(self, lst):
+        return len(set(lst)) == len(lst)
 
     def get_human_action_distribution(self, obsH, prev_aR, theta):
         raise NotImplementedError("Human policy must be implemented by subclass")
 
     def is_terminal(self, state):
-        return state['recipe'] != None
+        return state['recipe'] != None or state['T'] >= self.horizon
 
     def encode_obs_distribution(self, obs_dist, prev_aH):
         # Observations are deterministic, so extract it
@@ -117,7 +162,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
             return result
 
         def encode_hand(hand):
-            lst = [] if hand == '' else [hand]
+            lst = [] if hand == self.EMPTY_HAND else [hand]
             return encode_ingredient_list(lst)
 
         channels = []
@@ -183,7 +228,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
         
         ### Render hand content
         def render_hand(hand, player_transform):
-            if hand != '':
+            if hand != self.EMPTY_HAND:
                 item, transform = self.make_item_image_transform(hand, scale=0.4)
                 transform.set_translation(0, -5)
                 item.add_attr(player_transform)
@@ -253,12 +298,12 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
             'H' : {
                 'pos': (1, 2),
                 'or': Direction.NORTH,
-                'hand': '',
+                'hand': self.EMPTY_HAND,
             },
             'R' : {
                 'pos' : (3, 1),
                 'or' : Direction.NORTH,
-                'hand' : '',
+                'hand' : self.EMPTY_HAND,
             },
             'plate' : (),
             'recipe' : None,
@@ -300,7 +345,7 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
             return wrap_direction(Direction.STAY)
 
         # If we've picked up something, put it on the plate
-        if obsH['H']['hand'] != '':
+        if obsH['H']['hand'] != self.EMPTY_HAND:
             return plan_to_interact('P')
 
         # For cake, human pedagogically selects chocolate first

@@ -418,8 +418,9 @@ def deep_rl_solve(
 def get_venv(env, n_envs=1):
     """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary.
     """
-    from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv
+    from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
     if n_envs == 1:
-        return DummyVecEnv([lambda : env])
+        new_env = DummyVecEnv([lambda : env])
     else:
-        return SubprocVecEnv([(lambda : env) for _ in range(n_envs)])
+        new_env = SubprocVecEnv([(lambda : env) for _ in range(n_envs)])
+    return VecNormalize(new_env)
