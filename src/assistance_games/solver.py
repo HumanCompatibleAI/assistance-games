@@ -389,7 +389,7 @@ def point_based_value_backup(pomdp, alphas, beliefs=None):
     return new_alphas
 
 
-def deep_rl_solve(
+def ppo_solve(
     pomdp,
     total_timesteps=1000000,
     learning_rate=1e-3,
@@ -414,6 +414,47 @@ def deep_rl_solve(
         policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
     policy.learn(total_timesteps=total_timesteps)
     return policy
+
+
+def dqn_solve(
+    pomdp,
+    total_timesteps=1000000,
+    learning_rate=1e-4,
+    seed=0,
+    log_dir=None,
+    tensorboard_log=None,
+    **kwargs,
+):
+    from stable_baselines.deepq.policies import FeedForwardPolicy
+    from stable_baselines import DQN
+    from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
+    import tensorflow as tf
+
+    def simple_cnn(images, **kwargs):
+        """Replacement for Nature CNN for smaller observation spaces.
+
+        :param images: (TensorFlow Tensor) Image input placeholder
+        :param kwargs: (dict) Extra keywords parameters for the convolutional layers of the CNN
+        :return: (TensorFlow Tensor) The CNN output layer
+        """
+        activ = tf.nn.relu
+        layer1 = activ(conv(images, 'c1', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
+        layer2 = activ(conv(layer1, 'c2', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
+        layer3 = activ(conv(layer2, 'c3', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
+        layer3 = conv_to_fc(layer3)
+        return activ(linear(layer3, 'fc1', n_hidden=128, init_scale=np.sqrt(2)))
+
+    class MyCnnPolicy(FeedForwardPolicy):
+        def __init__(self, sess, ob_space, ac_space, n_env, n_steps, n_batch,
+                     reuse=False, obs_phs=None, dueling=True, **_kwargs):
+            super(MyCnnPolicy, self).__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch, reuse,
+                                              feature_extraction="cnn", cnn_extractor=simple_cnn,
+                                              obs_phs=obs_phs, dueling=dueling, layer_norm=False, **_kwargs)
+
+    policy = DQN(MyCnnPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
+    policy.learn(total_timesteps=total_timesteps)
+    return policy
+
 
 def get_venv(env, n_envs=1):
     """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary.

@@ -9,7 +9,7 @@ import time
 import numpy as np
 
 from assistance_games.parser import read_pomdp
-from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
+from assistance_games.solver import pbvi, exact_vi, ppo_solve, dqn_solve, get_venv
 from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
@@ -119,7 +119,8 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
-        'deeprl' : partial(deep_rl_solve, log_dir=log_dir_base),
+        'ppo' : partial(ppo_solve, log_dir=log_dir_base),
+        'dqn' : partial(dqn_solve, log_dir=log_dir_base),
         'random' : lambda *args, **kwargs : None,
         'hardcoded' : partial(get_hardcoded_policy, env_name=env_name),
     }
