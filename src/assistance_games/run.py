@@ -111,7 +111,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         log_dir_base = './logs'
         if not output_folder:
             output_folder = env_name
-        log_dir = os.path.join(log_dir_base, output_folder, f'seed{seed}')
+        log_dir = os.path.join(log_dir_base, output_folder, algo_name + f'_seed{seed}')
     else:
         log_dir_base = None
         log_dir = None
@@ -119,8 +119,8 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     algos = {
         'exact' : exact_vi,
         'pbvi' : pbvi,
-        'ppo' : partial(ppo_solve, log_dir=log_dir_base),
-        'dqn' : partial(dqn_solve, log_dir=log_dir_base),
+        'ppo' : partial(ppo_solve, log_dir=log_dir),
+        'dqn' : partial(dqn_solve, log_dir=log_dir),
         'random' : lambda *args, **kwargs : None,
         'hardcoded' : partial(get_hardcoded_policy, env_name=env_name),
     }

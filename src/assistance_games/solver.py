@@ -393,12 +393,13 @@ def ppo_solve(
     pomdp,
     total_timesteps=1000000,
     learning_rate=1e-3,
-    use_lstm=True,
+    use_lstm=False,
     seed=0,
     log_dir=None,
 ):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
+    from stable_baselines.common.callbacks import EvalCallback
 
     if use_lstm:
         policy = PPO2(MlpLstmPolicy,
@@ -411,8 +412,10 @@ def ppo_solve(
                       seed=seed,
                       n_cpu_tf_sess=8)
     else:
-        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
-    policy.learn(total_timesteps=total_timesteps)
+        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed, n_cpu_tf_sess=8)
+    eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
+                                 eval_freq=10000, n_eval_episodes=100)
+    policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
 
 
@@ -428,6 +431,7 @@ def dqn_solve(
     from stable_baselines.deepq.policies import FeedForwardPolicy
     from stable_baselines import DQN
     from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
+    from stable_baselines.common.callbacks import EvalCallback
     import tensorflow as tf
 
     def simple_cnn(images, **kwargs):
@@ -451,8 +455,10 @@ def dqn_solve(
                                               feature_extraction="cnn", cnn_extractor=simple_cnn,
                                               obs_phs=obs_phs, dueling=dueling, layer_norm=False, **_kwargs)
 
+    eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
+                                 eval_freq=10000, n_eval_episodes=100)
     policy = DQN(MyCnnPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
-    policy.learn(total_timesteps=total_timesteps)
+    policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
 
 
