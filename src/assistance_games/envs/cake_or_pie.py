@@ -99,7 +99,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
             base_reward = 10
         elif next_state['recipe'] is not None:
             base_reward = 1
-        return base_reward + shaping
+        return base_reward # + shaping
 
     # Potential shaping. Finite horizon means the reward shaping
     # theorem does not apply, so the scale needs to be kept below the
@@ -296,7 +296,7 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
 
         initial_state = {
             'H' : {
-                'pos': (1, 2),
+                'pos': (1, 3),
                 'or': Direction.NORTH,
                 'hand': self.EMPTY_HAND,
             },
