@@ -21,7 +21,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
         initial_state['T'] = 0
         self.gridworld = gridworld
         self.ingredients = ingredients
-        self.ingredient_to_index = {v:i for i, v in enumerate(self.ingredients)}
+        self.ingredient_to_index = {v: i for i, v in enumerate(self.ingredients)}
         self.recipes = [tuple(sorted(recipe)) for recipe in recipes]
         assert all(self._is_unique(r) for r in self.recipes), "Recipes should not have duplicates"
         w, h = self.gridworld.width, self.gridworld.height
@@ -33,7 +33,8 @@ class AbstractRecipeGridworld(AssistancePOMDP):
             init_state_dist=KroneckerDistribution(initial_state),
             # One channel each for 1) H position + orientation, 2) R pos + or,
             # 3) H hand, 4) R hand, 5) plate contents. All effectively one hot.
-            observation_space=Box(low=0, high=1, shape=((5, h, w))),
+            # observation_space=Box(low=0, high=1, shape=((5, h, w))),
+            observation_space=Box(low=0, high=1, shape=((82,))),
             action_space=Discrete(6),
             default_aH=stay,
             default_aR=stay
@@ -96,10 +97,10 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
         base_reward = 0
         if next_state['recipe'] == self.recipes[theta]:
-            base_reward = 10
+            base_reward = 2
         elif next_state['recipe'] is not None:
-            base_reward = 1
-        return base_reward # + shaping
+            base_reward = -1
+        return base_reward - state['T'] * 0.01 + shaping
 
     # Potential shaping. Finite horizon means the reward shaping
     # theorem does not apply, so the scale needs to be kept below the
@@ -134,55 +135,56 @@ class AbstractRecipeGridworld(AssistancePOMDP):
         raise NotImplementedError("Human policy must be implemented by subclass")
 
     def is_terminal(self, state):
-        return state['recipe'] != None or state['T'] >= self.horizon
+        return state['recipe'] is not None or state['T'] >= self.horizon
 
     def encode_obs_distribution(self, obs_dist, prev_aH):
         # Observations are deterministic, so extract it
         (obs,) = tuple(obs_dist.support())
-        num_ingredients = len(self.ingredients)
         w, h = self.gridworld.width, self.gridworld.height
-        # This is a hack -- we're encoding ingredients as indices on a channel
-        assert num_ingredients < min(w, h)
 
-        # We assume the layout is surrounded by walls, so that the location the
-        # player is facing is always a legal gridworld cell
-        def encode_pos_and_or(pos, orientation):
+        def encode_pos(pos):
             x, y = pos
-            facing_x, facing_y = Direction.move_in_direction(pos, orientation)
             result = np.zeros((h, w))
             result[y][x] = 1.0
-            result[facing_y][facing_x] = 0.5
+            return result.flatten()
+
+        def encode_or(orientation):
+            result = np.zeros(5)
+            or_idx = Direction.get_number_from_direction(orientation)
+            result[or_idx] = 1.0
             return result
 
         def encode_ingredient_list(ingredients):
-            result = np.zeros((h, w))
+            result = np.zeros(len(self.ingredients))
             for ingredient in ingredients:
                 i = self.ingredient_to_index[ingredient]
-                result[i][i] += 1.0
+                result[i] = 1.0
             return result
 
         def encode_hand(hand):
             lst = [] if hand == self.EMPTY_HAND else [hand]
             return encode_ingredient_list(lst)
 
-        channels = []
-        channels.append(encode_pos_and_or(obs['R']['pos'], obs['R']['or']))
-        channels.append(encode_pos_and_or(obs['H']['pos'], obs['H']['or']))
-        channels.append(encode_hand(obs['R']['hand']))
-        channels.append(encode_hand(obs['H']['hand']))
-        channels.append(encode_ingredient_list(obs['plate']))
+        features = [encode_pos(obs['R']['pos']),
+                    encode_pos(obs['H']['pos']),
+                    encode_or(obs['H']['or']),
+                    encode_or(obs['R']['or']),
+                    encode_hand(obs['R']['hand']),
+                    encode_hand(obs['H']['hand']),
+                    encode_ingredient_list(obs['plate'])]
         # Human action is mostly inferrable from the position + orientation, so
         # we ignore it
-        return KroneckerDistribution(np.array(channels))
+        return KroneckerDistribution(np.concatenate(features))
 
     def close(self):
         self.gridworld.close()
         super().close()
 
-    def make_item_image_transform(self, item, scale=1):
+    def make_item_image_transform(self, item, scale=1.0):
         raise NotImplementedError("Item rendering must be implemented by subclass")
 
     def render(self, state, prev_aH, prev_aR, theta, mode='human'):
+        print(state)
         gw, gh = 200.0 / self.gridworld.width, 200.0 / self.gridworld.height
         self.gridworld.set_object_positions({'R': state['R']['pos'], 'H': state['H']['pos']})
 
@@ -225,7 +227,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
         ### Render recipe in thought bubble
         self.gridworld.viewer.add_onetime(self.recipe_images[theta])
 
-        
+
         ### Render hand content
         def render_hand(hand, player_transform):
             if hand != self.EMPTY_HAND:
@@ -253,14 +255,14 @@ class AbstractRecipeGridworld(AssistancePOMDP):
                 item, transform = self.make_item_image_transform(item_name, scale=0.4)
 
                 d = 7
-                dx = (-1) ** (j+1) * d
+                dx = (-1) ** (j + 1) * d
                 dy = (-1) ** (j // 2) * d
-                item_coords = (lambda x, y : (x+dx, y+dy))(*plate_coords)
+                item_coords = (lambda x, y: (x+dx, y+dy))(*plate_coords)
 
                 transform.set_translation(*item_coords)
                 self.gridworld.viewer.add_onetime(item)
 
-        return self.gridworld.viewer.render(return_rgb_array = mode=='rgb_array')
+        return self.gridworld.viewer.render(return_rgb_array=mode == 'rgb_array')
 
 
 class CakeOrPieGridworld(AbstractRecipeGridworld):
@@ -272,8 +274,8 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
             "X X X",
             "X X X",
             "XXXAX",
-        ][::-1] # Reverse so that index 0 means what is visually the bottom row
-        player_positions = {'R': (3, 1), 'H': (1, 2)}
+        ][::-1]  # Reverse so that index 0 means what is visually the bottom row
+        player_positions = {'R': (3, 1), 'H': (1, 3)}
         rendering_fns = {
             'H': [make_ellipse_renderer(scale_width=0.8, scale_height=0.56, offset=(1, 1), rgb_color=(0.9, 0.9, 0.9)),
                   make_ellipse_renderer(scale_width=0.17, scale_height=0.12, offset=(0.6, 0.6), rgb_color=(0.9, 0.9, 0.9)),
@@ -295,18 +297,18 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
         gridworld = Gridworld(layout, player_positions, rendering_fns)
 
         initial_state = {
-            'H' : {
+            'H': {
                 'pos': (1, 3),
                 'or': Direction.NORTH,
                 'hand': self.EMPTY_HAND,
             },
-            'R' : {
-                'pos' : (3, 1),
-                'or' : Direction.NORTH,
-                'hand' : self.EMPTY_HAND,
+            'R': {
+                'pos': (3, 1),
+                'or': Direction.NORTH,
+                'hand': self.EMPTY_HAND,
             },
-            'plate' : (),
-            'recipe' : None,
+            'plate': (),
+            'recipe': None,
         }
 
         recipes = [
@@ -348,8 +350,11 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
         if obsH['H']['hand'] != self.EMPTY_HAND:
             return plan_to_interact('P')
 
+        # TODO: Pass pedagogic vs not flag as a parameter
         # For cake, human pedagogically selects chocolate first
         ingredient_order = ['C', 'D', 'B', 'A'] if theta == 0 else ['D', 'B']
+        # Unpedagogic baseline
+        # ingredient_order = ['D', 'B', 'C', 'A'] if theta == 0 else ['D', 'B']
         for ingredient in ingredient_order:
             if ingredient != obsH['R']['hand'] and ingredient not in obsH['plate']:
                 return plan_to_interact(ingredient)
