@@ -91,6 +91,7 @@ def exact_vi(pomdp, max_value_iter=30, **kwargs):
 
     return POMDPPolicy(alphas, pomdp)
 
+
 def get_effective_horizon(pomdp, epsilon=1e-3):
     """Effective horizon for the POMDP.
 
@@ -114,6 +115,7 @@ def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_exp
         max_new_beliefs = num_beliefs if limit_belief_expansion else None
         return density_expand_beliefs(pomdp, beliefs, max_new_beliefs)
 
+
 def sample_random_beliefs(pomdp, num_beliefs):
     """Mixed sampling for beliefs.
 
@@ -128,6 +130,7 @@ def sample_random_beliefs(pomdp, num_beliefs):
     unif = np.stack([uniform_simplex_sample(num_states) for _ in range(num_beliefs - num_beliefs // 2)])
     beliefs = np.concatenate([beliefs, unif], axis=0)
     return beliefs
+
 
 def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     """Expand belief set by sampling next beliefs.
@@ -191,6 +194,7 @@ def exact_value_backup(pomdp, alphas):
     new_alphas = prune_alphas(new_alphas)
     return new_alphas
 
+
 def cross_sums(V, v0):
     """Returns (v0 + sum(V[i][p[i]] for i in range(n)) for p in permutations(n))."""
     if V.shape[0] == 0:
@@ -199,6 +203,7 @@ def cross_sums(V, v0):
         for vec in cross_sums(V[1:], v0):
             for val in V[0]:
                 yield vec + val
+
 
 def prune_alphas(alpha_pairs):
     """Removes alphas not used for any possible belief.
@@ -314,7 +319,6 @@ def prune_alphas(alpha_pairs):
             'the code.'
         )
 
-
     successes = []
     queue = alpha_pairs
 
@@ -344,7 +348,6 @@ def compute_obs_alphas(pomdp, alphas):
         for o in range(nO):
             obs_alphas[a, o] = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
     return obs_alphas
-
 
 
 def point_based_value_backup(pomdp, alphas, beliefs=None):
@@ -412,7 +415,14 @@ def ppo_solve(
                       seed=seed,
                       n_cpu_tf_sess=8)
     else:
-        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed, n_cpu_tf_sess=8)
+        policy = PPO2(MlpPolicy,
+                      pomdp,
+                      policy_kwargs=dict(net_arch=[256, 256]),
+                      # learning_rate=learning_rate,
+                      seed=seed,
+                      gamma=0.99,
+                      n_steps=1024,
+                      n_cpu_tf_sess=8)
     eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
                                  eval_freq=10000, n_eval_episodes=100)
     policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
@@ -422,52 +432,28 @@ def ppo_solve(
 def dqn_solve(
     pomdp,
     total_timesteps=1000000,
-    learning_rate=1e-4,
+    learning_rate=3e-5,
     seed=0,
     log_dir=None,
     tensorboard_log=None,
     **kwargs,
 ):
-    from stable_baselines.deepq.policies import FeedForwardPolicy
     from stable_baselines import DQN
-    from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
     from stable_baselines.common.callbacks import EvalCallback
-    import tensorflow as tf
-
-    def simple_cnn(images, **kwargs):
-        """Replacement for Nature CNN for smaller observation spaces.
-
-        :param images: (TensorFlow Tensor) Image input placeholder
-        :param kwargs: (dict) Extra keywords parameters for the convolutional layers of the CNN
-        :return: (TensorFlow Tensor) The CNN output layer
-        """
-        activ = tf.nn.relu
-        layer1 = activ(conv(images, 'c1', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
-        layer2 = activ(conv(layer1, 'c2', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
-        layer3 = activ(conv(layer2, 'c3', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
-        layer3 = conv_to_fc(layer3)
-        return activ(linear(layer3, 'fc1', n_hidden=128, init_scale=np.sqrt(2)))
-
-    class MyCnnPolicy(FeedForwardPolicy):
-        def __init__(self, sess, ob_space, ac_space, n_env, n_steps, n_batch,
-                     reuse=False, obs_phs=None, dueling=True, **_kwargs):
-            super(MyCnnPolicy, self).__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch, reuse,
-                                              feature_extraction="cnn", cnn_extractor=simple_cnn,
-                                              obs_phs=obs_phs, dueling=dueling, layer_norm=False, **_kwargs)
 
     eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
-                                 eval_freq=10000, n_eval_episodes=100)
-    policy = DQN(MyCnnPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
+                                 eval_freq=16000, n_eval_episodes=50)
+    policy = DQN("MlpPolicy", pomdp, learning_rate=learning_rate, seed=seed,
+                 tensorboard_log=tensorboard_log, prioritized_replay=True, policy_kwargs={'layers': [128, 128]})
     policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
 
 
 def get_venv(env, n_envs=1):
-    """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary.
-    """
+    """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary."""
     from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
     if n_envs == 1:
-        new_env = DummyVecEnv([lambda : env])
+        new_env = DummyVecEnv([lambda: env])
     else:
-        new_env = SubprocVecEnv([(lambda : env) for _ in range(n_envs)])
+        new_env = SubprocVecEnv([(lambda: env) for _ in range(n_envs)])
     return VecNormalize(new_env)
