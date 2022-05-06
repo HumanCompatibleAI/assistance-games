@@ -21,11 +21,15 @@ from assistance_games.core import (
 
 def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_steps=100, render_mode='human'):
     if num_episodes == -1:
-        num_episodes = int(1e6)
+        num_episodes = int(5e6)
 
     def render_fn(prev_action=None):
         if render_mode is not None:
-            result = env.render(mode=render_mode, prev_action=prev_action)
+            if prev_action:
+                result = env.render(mode=render_mode, prev_action=prev_action)
+            else:
+                result = env.render(mode=render_mode)
+            
             time.sleep(dt)
             return result
 
@@ -138,7 +142,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         # Set up logging
         if log_dir is not None:
             # This import can take 10+ seconds, so only do it if necessary
-            from stable_baselines.bench import Monitor
+            from stable_baselines3.common.monitor import Monitor
             Path(log_dir).mkdir(parents=True, exist_ok=True)
             env = Monitor(env, log_dir)
         # Necessary for using LSTMs
@@ -176,18 +180,19 @@ def str_to_dict(s):
 def main():
     import argparse
     parser = argparse.ArgumentParser()
+    parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
     parser.add_argument('-k', '--env_kwargs', type=str_to_dict, default='')
-    parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
-    parser.add_argument('-o', '--output_folder', type=str, default='')
-    parser.add_argument('-s', '--seed', type=int, default=0)
-    parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
+    parser.add_argument('-l', '--logging', default=True, action='store_true')
     parser.add_argument('-m', '--num_runs', type=int, default=1)
+    parser.add_argument('-n', '--total_timesteps', type=int, default=int(5e6))
+    parser.add_argument('-nl', '--no_logging', dest='logging', action='store_false')
+    parser.add_argument('-nr', '--no_render', dest='render', action='store_false')
+    parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-p', '--num_episodes', type=int, default=10)
     parser.add_argument('-r', '--render', default=True, action='store_true')
-    parser.add_argument('-nr', '--no_render', dest='render', action='store_false')
-    parser.add_argument('-l', '--logging', default=True, action='store_true')
-    parser.add_argument('-nl', '--no_logging', dest='logging', action='store_false')
+    parser.add_argument('-s', '--seed', type=int, default=0)
+    parser.add_argument('-tb', '--tensorboard_log', default=None, type=str)
     args = parser.parse_args()
 
     for run_id in range(args.num_runs):
@@ -202,6 +207,7 @@ def main():
             total_timesteps=args.total_timesteps,
             render=args.render,
             num_episodes=args.num_episodes,
+            tensorboard_log=args.tensorboard_log,
         )
 
 

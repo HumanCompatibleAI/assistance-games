@@ -35,7 +35,7 @@ python -m assistance_games.run -e worms -a pbvi -k two_phase:True,discount:0.9
 
 Cake or pie environment (Section 4.3):
 ```
-python -m assistance_games.run -e cake_or_pie -a dqn -n 1000000
+python -m assistance_games.run -e cake_or_pie -a dqn -n 5000000
 ```
 
 ## Overview of files:

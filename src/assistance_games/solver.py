@@ -19,14 +19,10 @@ from scipy.spatial import distance_matrix
 
 import cvxpy as cp
 
-from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
+from .utils import sample_distribution, uniform_simplex_sample, force_dense
 
 Alpha = namedtuple('Alpha', ['vector', 'action'])
 
-
-def maybe_todense(x):
-    """Convert a sparse matrix to dense if necessary."""
-    return x if isinstance(x, np.ndarray) else x.todense()
 
 class POMDPPolicy:
     """Policy from alpha vectors provided by POMDP solvers"""
@@ -153,12 +149,12 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
             new_belief /= new_belief.sum()
             candidates.append(new_belief)
 
-        dists = distance_matrix([maybe_todense(x) for x in candidates], new_beliefs).min(axis=1)
+        dists = distance_matrix([force_dense(x) for x in candidates], new_beliefs).min(axis=1)
         idx = np.argmax(dists)
         dist = dists[idx]
 
         if dist > epsilon:
-            new_beliefs.append(maybe_todense(candidates[idx]))
+            new_beliefs.append(force_dense(candidates[idx]))
 
     return new_beliefs
 
@@ -341,7 +337,7 @@ def compute_obs_alphas(pomdp, alphas):
     for a in range(nA):
         for o in range(nO):
             sparse = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
-            obs_alphas[a, o] = maybe_todense(sparse)
+            obs_alphas[a, o] = force_dense(sparse)
     return obs_alphas
 
 
@@ -390,75 +386,79 @@ def point_based_value_backup(pomdp, alphas, beliefs=None):
 
 def ppo_solve(
     pomdp,
-    total_timesteps=1000000,
+    total_timesteps=5000000,
     learning_rate=1e-3,
     use_lstm=True,
     seed=0,
     log_dir=None,
+    tensorboard_log=None,
 ):
-    from stable_baselines import PPO2
-    from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
+    from stable_baselines3 import PPO
+    from stable_baselines3.ppo import MlpPolicy
 
     if use_lstm:
-        policy = PPO2(MlpLstmPolicy,
-                      pomdp,
-                      learning_rate=learning_rate,
-                      nminibatches=1,
-                      policy_kwargs=dict(n_lstm=32),
-                      ent_coef=0.011,
-                      n_steps=256,
-                      seed=seed,
-                      n_cpu_tf_sess=8)
+        from sb3_contrib.ppo_recurrent import MlpLstmPolicy, RecurrentPPO
+        policy = RecurrentPPO(MlpLstmPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
     else:
-        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
+        policy = PPO(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
+    
     policy.learn(total_timesteps=total_timesteps)
     return policy
 
 
 def dqn_solve(
     pomdp,
-    total_timesteps=1000000,
+    total_timesteps=5000000,
     learning_rate=1e-4,
     seed=0,
     log_dir=None,
     tensorboard_log=None,
     **kwargs,
 ):
-    from stable_baselines.deepq.policies import FeedForwardPolicy
-    from stable_baselines import DQN
-    from stable_baselines.common.tf_layers import conv, linear, conv_to_fc
-    import tensorflow as tf
+    from gym.spaces import Box
+    from torch import nn
+    from stable_baselines3.dqn.policies import DQNPolicy
+    from stable_baselines3 import DQN
+    from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+    import torch as th
 
-    def simple_cnn(images, **kwargs):
-        """Replacement for Nature CNN for smaller observation spaces.
+    class SmallCnn(BaseFeaturesExtractor):
+        """Replacement for Nature CNN for smaller observation spaces."""
+        def __init__(self, observation_space: Box, features_dim: int = 128):
+            super().__init__(observation_space, features_dim)
 
-        :param images: (TensorFlow Tensor) Image input placeholder
-        :param kwargs: (dict) Extra keywords parameters for the convolutional layers of the CNN
-        :return: (TensorFlow Tensor) The CNN output layer
-        """
-        activ = tf.nn.relu
-        layer1 = activ(conv(images, 'c1', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
-        layer2 = activ(conv(layer1, 'c2', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
-        layer3 = activ(conv(layer2, 'c3', n_filters=32, filter_size=2, stride=1, init_scale=np.sqrt(2), **kwargs))
-        layer3 = conv_to_fc(layer3)
-        return activ(linear(layer3, 'fc1', n_hidden=128, init_scale=np.sqrt(2)))
+            n_input_channels = observation_space.shape[0]
+            self.cnn = nn.Sequential(
+                nn.Conv2d(n_input_channels, 32, kernel_size=2, stride=1, padding=0),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, kernel_size=2, stride=1, padding=0),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, kernel_size=2, stride=1, padding=0),
+                nn.ReLU(),
+                nn.Flatten(),
+            )
 
-    class MyCnnPolicy(FeedForwardPolicy):
-        def __init__(self, sess, ob_space, ac_space, n_env, n_steps, n_batch,
-                     reuse=False, obs_phs=None, dueling=True, **_kwargs):
-            super(MyCnnPolicy, self).__init__(sess, ob_space, ac_space, n_env, n_steps, n_batch, reuse,
-                                              feature_extraction="cnn", cnn_extractor=simple_cnn,
-                                              obs_phs=obs_phs, dueling=dueling, layer_norm=False, **_kwargs)
+            # Compute shape by doing one forward pass
+            with th.no_grad():
+                n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
 
-    policy = DQN(MyCnnPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
+            self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+
+        def forward(self, observations: th.Tensor) -> th.Tensor:
+            return self.linear(self.cnn(observations))
+
+    policy = DQN(
+        DQNPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log,
+        policy_kwargs=dict(features_extractor_class=SmallCnn),
+    )
     policy.learn(total_timesteps=total_timesteps)
     return policy
 
 
 def get_venv(env, n_envs=1):
-    """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary.
+    """Simple wrapper to avoid importing stable-baselines and PyTorch when unnecessary.
     """
-    from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
+    from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
     if n_envs == 1:
         new_env = DummyVecEnv([lambda : env])
     else:
