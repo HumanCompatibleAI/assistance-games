@@ -388,7 +388,7 @@ def ppo_solve(
     pomdp,
     total_timesteps=5000000,
     learning_rate=1e-3,
-    use_lstm=True,
+    use_lstm=False,
     seed=0,
     log_dir=None,
     tensorboard_log=None,
