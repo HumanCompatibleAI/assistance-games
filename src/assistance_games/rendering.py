@@ -6,9 +6,7 @@ but might be expanded/replaced as needed.
 
 import numpy as np
 import pyglet.text
-from gym.envs.classic_control import rendering
-from gym.envs.classic_control.rendering import (
-        Geom, make_circle, Viewer, Transform, FilledPolygon, make_polygon)
+from .pyglet_rendering import Geom, Image, Line, make_polygon
 
 
 def make_ellipse(r_x=10, r_y=10, res=30, filled=True):
@@ -19,12 +17,12 @@ def make_ellipse(r_x=10, r_y=10, res=30, filled=True):
     return make_polygon(points, filled=filled)
 
 
-class Image(rendering.Image):
+class Image(Image):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.set_color(1.0, 1.0, 1.0)
 
-class Grid(rendering.Geom):
+class Grid(Geom):
     def __init__(self, *, start=(0, 0), end=None, grid_side=None, shape=(2, 2), invert_y=False):
         super().__init__()
 
@@ -55,11 +53,11 @@ class Grid(rendering.Geom):
         self.lines = []
 
         for x in x_ticks:
-            line = rendering.Line((x, y_start), (x, y_end))
+            line = Line((x, y_start), (x, y_end))
             self.lines.append(line)
 
         for y in y_ticks:
-            line = rendering.Line((x_start, y), (x_end, y))
+            line = Line((x_start, y), (x_end, y))
             self.lines.append(line)
 
     def pos_from_state(self, state):
@@ -84,7 +82,7 @@ class Grid(rendering.Geom):
             line.set_color(r, g, b)
 
 
-class Text(rendering.Geom):
+class Text(Geom):
     def __init__(self, *, x=0, y=0, text='[placeholder]'):
         super().__init__()
         self.text = text

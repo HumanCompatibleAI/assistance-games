@@ -72,7 +72,7 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
 def get_env_fn(env_name):
     name_to_env_fn = {
         'cake_or_pie': envs.CakeOrPieGridworld,
-        'mealgraph' : envs.MealChoice,
+        'mealchoice' : envs.MealChoice,
         'pie_small' : envs.SmallPieGridworld,
         'redblue' : envs.RedBlue,
         'wardrobe' : envs.Wardrobe,
@@ -83,7 +83,7 @@ def get_env_fn(env_name):
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
     hardcoded_policies = {
         'cake_or_pie': envs.get_cake_or_pie_hardcoded_robot_policy,
-        'mealgraph': envs.get_meal_choice_hardcoded_robot_policy,
+        'mealchoice': envs.get_meal_choice_hardcoded_robot_policy,
         'pie_small': envs.get_small_pie_hardcoded_robot_policy,
     }
     if env_name not in hardcoded_policies:
@@ -134,7 +134,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     else:
         env = ReducedAssistancePOMDPWithMatrices(env)
 
-    if algo_name == 'deeprl':
+    if algo_name == 'dqn':
         # Set up logging
         if log_dir is not None:
             # This import can take 10+ seconds, so only do it if necessary

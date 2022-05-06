@@ -1,7 +1,8 @@
 import copy
 
 import assistance_games.rendering as rendering
-from assistance_games.utils import get_asset
+from ..pyglet_rendering import Transform, Viewer
+from ..utils import get_asset
 
 class Gridworld(object):
     """A gridworld with walls and multiple movable objects.
@@ -140,7 +141,7 @@ class Gridworld(object):
         cell_shape = (200.0 / w, 200.0 / h)
 
         import assistance_games.rendering as rendering
-        self.viewer = rendering.Viewer(*viewer_bounds)
+        self.viewer = Viewer(*viewer_bounds)
         bounds = (-120, 120, -120, 120)
         bounds = tuple((b + o for b, o in zip(bounds, grid_offsets)))
         self.viewer.set_bounds(*bounds)
@@ -189,7 +190,7 @@ def make_rendering_fn(creation_fn, offset=None, rgb_color=None):
             nonlocal transform
             if transform is None:
                 thing = creation_fn(viewer, grid, pos, cell_shape)
-                transform = rendering.Transform()
+                transform = Transform()
                 thing.add_attr(transform)
                 if rgb_color is not None:
                     thing.set_color(*rgb_color)
