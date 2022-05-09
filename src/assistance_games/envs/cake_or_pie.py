@@ -96,10 +96,12 @@ class AbstractRecipeGridworld(AssistancePOMDP):
             shaping = self.discount * self.phi(next_state, theta) - self.phi(state, theta)
 
         base_reward = 0
+        # +2 reward for the correct recipe, -1 reward for the wrong one
         if next_state['recipe'] == self.recipes[theta]:
             base_reward = 2
         elif next_state['recipe'] is not None:
             base_reward = -1
+        # TODO -state['T'] * 0.01 penalizes longer episodes in a weird way; what was a reason for doing it this way?
         return base_reward - state['T'] * 0.01 + shaping
 
     # Potential shaping. Finite horizon means the reward shaping

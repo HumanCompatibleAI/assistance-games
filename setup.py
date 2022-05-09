@@ -21,7 +21,7 @@ setup(
         'numpy>=1.13',
         'scipy>=0.19',
         'sparse>=0.9.1',
-        'gym',
+        'gym<=0.21.0',
         'lark-parser>=0.8',
         'stable-baselines>=2.9',
         'tensorflow>=1.15.0,<2.0',
