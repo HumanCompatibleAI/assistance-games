@@ -25,7 +25,8 @@ setup(
         'lark-parser>=0.8',
         'stable-baselines>=2.9',
         'tensorflow>=1.15.0,<2.0',
-        'cvxpy>=1.1.13'
+        'cvxpy>=1.1.13',
+        'pyglet',
     ],
     tests_require=['pytest'],
     include_package_data=True,
