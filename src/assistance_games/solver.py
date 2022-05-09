@@ -12,6 +12,7 @@ and deep rl solvers.
     https://www.cs.mcgill.ca/~jpineau/files/jpineau-jaamas12-finalcopy.pdf
 """
 from collections import namedtuple
+from subprocess import call
 import numpy as np
 from scipy.optimize import linprog
 from scipy.special import softmax
@@ -388,70 +389,43 @@ def ppo_solve(
     pomdp,
     total_timesteps=5000000,
     learning_rate=1e-3,
-    use_lstm=False,
+    use_lstm=True,
     seed=0,
     log_dir=None,
     tensorboard_log=None,
 ):
     from stable_baselines3 import PPO
+    from stable_baselines3.common.callbacks import CheckpointCallback
     from stable_baselines3.ppo import MlpPolicy
 
     if use_lstm:
         from sb3_contrib.ppo_recurrent import MlpLstmPolicy, RecurrentPPO
-        policy = RecurrentPPO(MlpLstmPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
+        policy = RecurrentPPO(
+            MlpLstmPolicy, pomdp, policy_kwargs=dict(lstm_hidden_size=32),
+            ent_coef=0.011, learning_rate=learning_rate, n_steps=256, seed=seed, tensorboard_log=tensorboard_log
+        )
     else:
         policy = PPO(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
     
-    policy.learn(total_timesteps=total_timesteps)
+    policy.learn(total_timesteps=total_timesteps, callback=CheckpointCallback(100_000, save_path=log_dir, verbose=2))
     return policy
 
 
 def dqn_solve(
     pomdp,
     total_timesteps=5000000,
-    learning_rate=1e-4,
+    learning_rate=3e-5,
     seed=0,
     log_dir=None,
     tensorboard_log=None,
     **kwargs,
 ):
-    from gym.spaces import Box
-    from torch import nn
     from stable_baselines3.dqn.policies import DQNPolicy
     from stable_baselines3 import DQN
-    from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-    import torch as th
+    from stable_baselines3.common.callbacks import CheckpointCallback
 
-    class SmallCnn(BaseFeaturesExtractor):
-        """Replacement for Nature CNN for smaller observation spaces."""
-        def __init__(self, observation_space: Box, features_dim: int = 128):
-            super().__init__(observation_space, features_dim)
-
-            n_input_channels = observation_space.shape[0]
-            self.cnn = nn.Sequential(
-                nn.Conv2d(n_input_channels, 32, kernel_size=2, stride=1, padding=0),
-                nn.ReLU(),
-                nn.Conv2d(32, 32, kernel_size=2, stride=1, padding=0),
-                nn.ReLU(),
-                nn.Conv2d(32, 32, kernel_size=2, stride=1, padding=0),
-                nn.ReLU(),
-                nn.Flatten(),
-            )
-
-            # Compute shape by doing one forward pass
-            with th.no_grad():
-                n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
-
-            self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
-
-        def forward(self, observations: th.Tensor) -> th.Tensor:
-            return self.linear(self.cnn(observations))
-
-    policy = DQN(
-        DQNPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log,
-        policy_kwargs=dict(features_extractor_class=SmallCnn),
-    )
-    policy.learn(total_timesteps=total_timesteps)
+    policy = DQN(DQNPolicy, pomdp, learning_rate=learning_rate, policy_kwargs=dict(net_arch=[128, 128]), seed=seed, tensorboard_log=tensorboard_log)
+    policy.learn(total_timesteps=total_timesteps, callback=CheckpointCallback(100_000, save_path=log_dir))
     return policy
 
 

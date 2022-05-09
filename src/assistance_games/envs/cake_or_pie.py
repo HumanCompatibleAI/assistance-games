@@ -5,6 +5,7 @@ from gym.spaces import Discrete, Box
 import numpy as np
 
 import assistance_games.rendering as rendering
+from assistance_games.pyglet_rendering import Transform
 from assistance_games.core import AssistancePOMDP, UniformDiscreteDistribution, KroneckerDistribution
 from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_ellipse_renderer, Direction
 from assistance_games.utils import get_asset
@@ -188,15 +189,15 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
         if not self.gridworld.is_renderer_initialized():
             self.gridworld.initialize_renderer(viewer_bounds=(600, 800), grid_offsets=(0, 0, 0, 130))
-            self.human_transform = rendering.Transform()
-            self.robot_transform = rendering.Transform()
+            self.human_transform = Transform()
+            self.robot_transform = Transform()
 
             ### Render formulae
             header_x = -120 + gw
             header_y = -150 + 8 * gh
             hl = 20
 
-            header_transform = rendering.Transform()
+            header_transform = Transform()
             header_transform.set_translation(header_x, header_y)
 
             for i, recipe in enumerate(self.recipes):
@@ -363,7 +364,7 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
             if h is None: h = w
             fullname = get_asset(f'images/{filename}')
             img = rendering.Image(fullname, scale * w * gw, scale * h * gh)
-            transform = rendering.Transform()
+            transform = Transform()
             img.add_attr(transform)
 
             if c is not None:
