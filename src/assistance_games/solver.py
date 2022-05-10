@@ -443,7 +443,7 @@ def dqn_solve(
 
     eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
                                  eval_freq=16000, n_eval_episodes=50)
-    policy = DQN("MlpPolicy", pomdp, learning_rate=learning_rate, seed=seed,
+    policy = DQN("MlpPolicy", pomdp, learning_rate=learning_rate, seed=seed, n_cpu_tf_sess=4,
                  tensorboard_log=tensorboard_log, prioritized_replay=True, policy_kwargs={'layers': [128, 128]})
     policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
