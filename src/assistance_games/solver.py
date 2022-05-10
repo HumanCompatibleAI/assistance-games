@@ -86,6 +86,7 @@ def exact_vi(pomdp, max_value_iter=30, **kwargs):
 
     return POMDPPolicy(alphas, pomdp)
 
+
 def get_effective_horizon(pomdp, epsilon=1e-3):
     """Effective horizon for the POMDP.
 
@@ -109,6 +110,7 @@ def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_exp
         max_new_beliefs = num_beliefs if limit_belief_expansion else None
         return density_expand_beliefs(pomdp, beliefs, max_new_beliefs)
 
+
 def sample_random_beliefs(pomdp, num_beliefs):
     """Mixed sampling for beliefs.
 
@@ -123,6 +125,7 @@ def sample_random_beliefs(pomdp, num_beliefs):
     unif = np.stack([uniform_simplex_sample(num_states) for _ in range(num_beliefs - num_beliefs // 2)])
     beliefs = np.concatenate([beliefs, unif], axis=0)
     return beliefs
+
 
 def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     """Expand belief set by sampling next beliefs.
@@ -186,6 +189,7 @@ def exact_value_backup(pomdp, alphas):
     new_alphas = prune_alphas(new_alphas)
     return new_alphas
 
+
 def cross_sums(V, v0):
     """Returns (v0 + sum(V[i][p[i]] for i in range(n)) for p in permutations(n))."""
     if V.shape[0] == 0:
@@ -194,6 +198,7 @@ def cross_sums(V, v0):
         for vec in cross_sums(V[1:], v0):
             for val in V[0]:
                 yield vec + val
+
 
 def prune_alphas(alpha_pairs):
     """Removes alphas not used for any possible belief.
@@ -309,7 +314,6 @@ def prune_alphas(alpha_pairs):
             'the code.'
         )
 
-
     successes = []
     queue = alpha_pairs
 
@@ -340,7 +344,6 @@ def compute_obs_alphas(pomdp, alphas):
             sparse = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
             obs_alphas[a, o] = force_dense(sparse)
     return obs_alphas
-
 
 
 def point_based_value_backup(pomdp, alphas, beliefs=None):
@@ -389,13 +392,13 @@ def ppo_solve(
     pomdp,
     total_timesteps=5000000,
     learning_rate=1e-3,
-    use_lstm=True,
+    use_lstm=False,
     seed=0,
     log_dir=None,
     tensorboard_log=None,
 ):
     from stable_baselines3 import PPO
-    from stable_baselines3.common.callbacks import CheckpointCallback
+    from stable_baselines3.common.callbacks import EvalCallback
     from stable_baselines3.ppo import MlpPolicy
 
     if use_lstm:
@@ -405,9 +408,16 @@ def ppo_solve(
             ent_coef=0.011, learning_rate=learning_rate, n_steps=256, seed=seed, tensorboard_log=tensorboard_log
         )
     else:
-        policy = PPO(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed, tensorboard_log=tensorboard_log)
+        policy = PPO(
+            MlpPolicy, pomdp, learning_rate=learning_rate, n_steps=1024,
+            policy_kwargs=dict(net_arch=[256, 256]), seed=seed, tensorboard_log=tensorboard_log
+        )
     
-    policy.learn(total_timesteps=total_timesteps, callback=CheckpointCallback(100_000, save_path=log_dir, verbose=2))
+    eval_callback = EvalCallback(
+        pomdp, best_model_save_path=log_dir, log_path=log_dir,
+        deterministic=True, eval_freq=10000, n_eval_episodes=100
+    )
+    policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
 
 
@@ -422,10 +432,14 @@ def dqn_solve(
 ):
     from stable_baselines3.dqn.policies import DQNPolicy
     from stable_baselines3 import DQN
-    from stable_baselines3.common.callbacks import CheckpointCallback
+    from stable_baselines3.common.callbacks import EvalCallback
 
+    eval_callback = EvalCallback(
+        pomdp, best_model_save_path=log_dir, log_path=log_dir,
+        deterministic=True, eval_freq=16000, n_eval_episodes=50
+    )
     policy = DQN(DQNPolicy, pomdp, learning_rate=learning_rate, policy_kwargs=dict(net_arch=[128, 128]), seed=seed, tensorboard_log=tensorboard_log)
-    policy.learn(total_timesteps=total_timesteps, callback=CheckpointCallback(100_000, save_path=log_dir))
+    policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
 
 
@@ -434,7 +448,7 @@ def get_venv(env, n_envs=1):
     """
     from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
     if n_envs == 1:
-        new_env = DummyVecEnv([lambda : env])
+        new_env = DummyVecEnv([lambda: env])
     else:
-        new_env = SubprocVecEnv([(lambda : env) for _ in range(n_envs)])
+        new_env = SubprocVecEnv([(lambda: env) for _ in range(n_envs)])
     return VecNormalize(new_env)

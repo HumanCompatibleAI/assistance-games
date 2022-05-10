@@ -17,7 +17,7 @@ setup(
         ],
     },
     install_requires=[
-        'cvxpy',
+        'cvxpy>=1.1.13',
         'gym',
         'lark-parser>=0.8',
         'numpy>=1.13',
@@ -25,7 +25,6 @@ setup(
         'scipy>=0.19',
         'sparse>=0.9.1',
         'stable-baselines3',
-        # 'git+git://github.com/Stable-Baselines-Team/stable-baselines3-contrib.git@feat/ppo-lstm'
     ],
     tests_require=['pytest'],
     include_package_data=True,
