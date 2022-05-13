@@ -50,11 +50,14 @@ Contains files with the core classes, such as:
 Contains various implementations of assistance problems and POMDPs.
 ### rendering.py
 Rendering utils for envs.
-### solver.py
-Implements POMDP solvers that can be used to solve the environments.
+### classic_solvers.py
+Implements non-deep learning POMDP solvers that can be used to solve the environments.
   * exact\_vi : Exact solver, can only solve very small environments
   * pbvi : Approximate anytime solver, relatively fast for medium-sized environments
-  * deep\_rl\_solve : Simple wrapper around stable\_baselines.PPO2
+### deep_rl.py
+Implements deep reinforcement learning-based POMDP solvers.
+  * dqn_solve: Train a DQN-based agent using Stable Baselines 3.
+  * ppo_solve: Train a PPO-based agent using Stable Baselines 3.
 ### parser.py
 Parser for .pomdp files (mostly for testing/benchmarking solvers).
 ### run.py

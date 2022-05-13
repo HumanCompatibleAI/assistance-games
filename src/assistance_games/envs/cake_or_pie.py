@@ -269,7 +269,8 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
 
 class CakeOrPieGridworld(AbstractRecipeGridworld):
-    def __init__(self):
+    def __init__(self, pedagogic: bool = True):
+        self.pedagogic = pedagogic
         layout = [
             "XXPXX",
             "C   B",
@@ -353,11 +354,12 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
         if obsH['H']['hand'] != self.EMPTY_HAND:
             return plan_to_interact('P')
 
-        # TODO: Pass pedagogic vs not flag as a parameter
         # For cake, human pedagogically selects chocolate first
-        ingredient_order = ['C', 'D', 'B', 'A'] if theta == 0 else ['D', 'B']
-        # Unpedagogic baseline
-        # ingredient_order = ['D', 'B', 'C', 'A'] if theta == 0 else ['D', 'B']
+        if self.pedagogic:
+            ingredient_order = ['C', 'D', 'B', 'A'] if theta == 0 else ['D', 'B']
+        else:
+            ingredient_order = ['D', 'B', 'C', 'A'] if theta == 0 else ['D', 'B']
+        
         for ingredient in ingredient_order:
             if ingredient != obsH['R']['hand'] and ingredient not in obsH['plate']:
                 return plan_to_interact(ingredient)

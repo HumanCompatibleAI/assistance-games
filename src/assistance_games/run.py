@@ -1,19 +1,12 @@
-"""Minimal script to solve and render an environment.
-"""
-
+from argparse import ArgumentParser
 from functools import partial
-from pathlib import Path
-import os
+import numpy as np
 import time
 
-import numpy as np
-
-from assistance_games.parser import read_pomdp
-from assistance_games.solver import pbvi, exact_vi, ppo_solve, dqn_solve, get_venv
-from assistance_games.utils import get_asset
-
+from .deep_rl import dqn_solve, ppo_solve
+from .classic_solvers import pbvi, exact_vi
 import assistance_games.envs as envs
-from assistance_games.core import (
+from .core import (
     ReducedAssistancePOMDP,
     ReducedAssistancePOMDPWithMatrices,
     ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
@@ -55,9 +48,9 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
             else:
                 ac, state = policy.predict(ob, state)
             ob, re, done, _ = env.step(ac)
-            if hasattr(env, "get_original_reward"):
-                re = env.get_original_reward()[0]
+
             log('r = {}'.format(re))
+            log('ac = {}'.format(ac))
             total_reward += re
             total_discounted_reward += cur_discount * re
             cur_discount *= discount
@@ -109,24 +102,14 @@ def save_results_to_gif(results, filename, fps=5, end_of_trajectory_pause=3):
     write_gif(dataset, filename, fps=fps)
 
 
-def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
-        render=True, num_episodes=10, **kwargs):
-    if logging is not None:
-        log_dir_base = './logs'
-        if not output_folder:
-            output_folder = env_name
-        log_dir = os.path.join(log_dir_base, output_folder, algo_name + f'_seed{seed}')
-    else:
-        log_dir_base = None
-        log_dir = None
-
+def run(env_name, env_kwargs, algo_name, seed=0, render=True, num_episodes=10, **kwargs):
     algos = {
+        'dqn' : dqn_solve,
         'exact' : exact_vi,
-        'pbvi' : pbvi,
-        'ppo' : partial(ppo_solve, log_dir=log_dir),
-        'dqn' : partial(dqn_solve, log_dir=log_dir),
-        'random' : lambda *args, **kwargs : None,
         'hardcoded' : partial(get_hardcoded_policy, env_name=env_name),
+        'pbvi' : pbvi,
+        'ppo' : ppo_solve,
+        'random' : lambda *args, **kwargs : None,
     }
     algo = algos[algo_name]
     env = get_env_fn(env_name)(**env_kwargs)
@@ -137,17 +120,7 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
         env = ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices(env)
     else:
         env = ReducedAssistancePOMDPWithMatrices(env)
-
-    if algo_name == 'dqn':
-        # Set up logging
-        if log_dir is not None:
-            # This import can take 10+ seconds, so only do it if necessary
-            from stable_baselines3.common.monitor import Monitor
-            Path(log_dir).mkdir(parents=True, exist_ok=True)
-            env = Monitor(env, log_dir)
-        # Necessary for using LSTMs
-        env = get_venv(env, n_envs=1)
-
+    
     print('\n Running algorithm {} with seed {}'.format(algo_name, seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
@@ -178,36 +151,42 @@ def str_to_dict(s):
     return result
 
 def main():
-    import argparse
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser(description="Minimal script to solve and render an environment.")
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     parser.add_argument('-e', '--env_name', type=str, default='redblue')
-    parser.add_argument('-k', '--env_kwargs', type=str_to_dict, default='')
-    parser.add_argument('-l', '--logging', default=True, action='store_true')
+    parser.add_argument('-k', '--env_kwargs', type=str, default='')
+    parser.add_argument('-l', '--log_dir', default='assistance-logs', type=str)
+    parser.add_argument('-ln', '--log_name', type=str, help="Name of the TensorBoard run")
     parser.add_argument('-m', '--num_runs', type=int, default=1)
-    parser.add_argument('-n', '--total_timesteps', type=int, default=int(5e6))
-    parser.add_argument('-nl', '--no_logging', dest='logging', action='store_false')
+    parser.add_argument('-n', '--total_timesteps', type=int, default=25_000_000)
+    parser.add_argument('-nl', '--no-log', action='store_true')
     parser.add_argument('-nr', '--no_render', dest='render', action='store_false')
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-p', '--num_episodes', type=int, default=10)
     parser.add_argument('-r', '--render', default=True, action='store_true')
     parser.add_argument('-s', '--seed', type=int, default=0)
-    parser.add_argument('-tb', '--tensorboard_log', default=None, type=str)
     args = parser.parse_args()
 
     for run_id in range(args.num_runs):
-        seed = args.seed + run_id
+        seed = args.seed + run_id   # Use a different seed for each run
+
+        if args.log_name is None:
+            base_name = f"{args.env_name}_{args.algo_name}"
+            if args.env_kwargs:
+                base_name += f"_{args.env_kwargs}"
+        else:
+            base_name = args.log_name
+        
         run(
             env_name=args.env_name,
-            env_kwargs=args.env_kwargs,
+            env_kwargs=str_to_dict(args.env_kwargs),
             algo_name=args.algo_name,
             seed=seed,
-            logging=args.logging,
-            output_folder=args.output_folder,
             total_timesteps=args.total_timesteps,
             render=args.render,
             num_episodes=args.num_episodes,
-            tensorboard_log=args.tensorboard_log,
+            log_dir=args.log_dir if not args.no_log else None,
+            log_name=f"{base_name}_seed{args.seed}",
         )
 
 

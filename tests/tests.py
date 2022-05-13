@@ -6,10 +6,9 @@ import numpy as np
 
 from assistance_games.core import ReducedAssistancePOMDP, ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
 import assistance_games.envs as envs
-from assistance_games.solver import pbvi, exact_vi, deep_rl_solve, get_venv
-from assistance_games.parser import read_pomdp
+from assistance_games.solver import pbvi, exact_vi, dqn_solve
 
-deep_rl_100k = partial(deep_rl_solve, total_timesteps=100000)
+deep_rl_100k = partial(dqn_solve, total_timesteps=100000)
 
 
 def eval_policy(
@@ -62,7 +61,7 @@ def test_similar_rewards_redblue():
     for solver in solvers:
         env = envs.RedBlue()
         if solver == deep_rl_100k:
-            env = get_venv(ReducedAssistancePOMDP(env))
+            env = ReducedAssistancePOMDP(env)
         else:
             env = ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices(env)
 
