@@ -431,7 +431,7 @@ def ppo_solve(
 
 def dqn_solve(
     pomdp,
-    total_timesteps=1000000,
+    total_timesteps=10_000_000,
     learning_rate=3e-5,
     seed=0,
     log_dir=None,
