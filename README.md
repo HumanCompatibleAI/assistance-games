@@ -35,7 +35,12 @@ python -m assistance_games.run -e worms -a pbvi -k two_phase:True,discount:0.9
 
 Cake or pie environment (Section 4.3):
 ```
-python -m assistance_games.run -e cake_or_pie -a dqn -s 0 -nr -n 5000000 -o pedagogic_human
+python -m assistance_games.run -e cake_or_pie -a dqn -nr -o pedagogic_human -s 0
+```
+
+Running headless: use the ``xvfb-run -a`` command, e.g. for the cake or pie environment
+```
+xvfb-run -a python -m assistance_games.run -e cake_or_pie -a dqn -nr -o pedagogic_human -s 0
 ```
 
 ## Overview of files:
