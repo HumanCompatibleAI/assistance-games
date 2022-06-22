@@ -72,7 +72,7 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
 def get_env_fn(env_name):
     name_to_env_fn = {
         'cake_or_pie': envs.CakeOrPieGridworld,
-        'mealgraph' : envs.MealChoice,
+        'mealchoice' : envs.MealChoice,
         'pie_small' : envs.SmallPieGridworld,
         'redblue' : envs.RedBlue,
         'wardrobe' : envs.Wardrobe,
@@ -83,7 +83,7 @@ def get_env_fn(env_name):
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
     hardcoded_policies = {
         'cake_or_pie': envs.get_cake_or_pie_hardcoded_robot_policy,
-        'mealgraph': envs.get_meal_choice_hardcoded_robot_policy,
+        'mealchoice': envs.get_meal_choice_hardcoded_robot_policy,
         'pie_small': envs.get_small_pie_hardcoded_robot_policy,
     }
     if env_name not in hardcoded_policies:

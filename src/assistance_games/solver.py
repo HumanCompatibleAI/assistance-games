@@ -31,11 +31,8 @@ class POMDPPolicy:
     """Policy from alpha vectors provided by POMDP solvers"""
     def __init__(self, alphas, pomdp):
         self.pomdp = pomdp
-        self.alpha_vectors = []
-        self.alpha_actions = []
-        for vec, act in alphas:
-            self.alpha_vectors.append(vec)
-            self.alpha_actions.append(act)
+        self.alpha_vectors = np.stack([vec for vec, _ in alphas])
+        self.alpha_actions = np.stack([act for _, act in alphas])
 
     def predict(self, obs, state=None, deterministic=True):
         # For a POMDP, the state of the policy is just its belief
@@ -57,6 +54,11 @@ class POMDPPolicy:
         state /= state.sum()
 
         return action, state
+
+
+def maybe_todense(x):
+    """Convert a sparse matrix to dense if necessary."""
+    return x if isinstance(x, np.ndarray) else x.todense()
 
 
 def pbvi(pomdp, max_iter=3, num_beliefs=30, max_value_iter=30, limit_belief_expansion=True, **kwargs):
@@ -158,12 +160,12 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
             new_belief /= new_belief.sum()
             candidates.append(new_belief)
 
-        dists = distance_matrix(candidates, new_beliefs).min(axis=1)
+        dists = distance_matrix([maybe_todense(x) for x in candidates], new_beliefs).min(axis=1)
         idx = np.argmax(dists)
         dist = dists[idx]
 
         if dist > epsilon:
-            new_beliefs.append(candidates[idx])
+            new_beliefs.append(maybe_todense(candidates[idx]))
 
     return new_beliefs
 
@@ -346,7 +348,8 @@ def compute_obs_alphas(pomdp, alphas):
     alpha_matrix = np.array(alpha_vecs).T
     for a in range(nA):
         for o in range(nO):
-            obs_alphas[a, o] = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
+            sparse = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
+            obs_alphas[a, o] = maybe_todense(sparse)
     return obs_alphas
 
 
