@@ -12,6 +12,7 @@ from .core import (
     ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
 )
 
+
 def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_steps=100, render_mode='human'):
     if num_episodes == -1:
         num_episodes = int(5e6)
@@ -69,13 +70,14 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
 def get_env_fn(env_name):
     name_to_env_fn = {
         'cake_or_pie': envs.CakeOrPieGridworld,
-        'mealchoice' : envs.MealChoice,
-        'pie_small' : envs.SmallPieGridworld,
-        'redblue' : envs.RedBlue,
-        'wardrobe' : envs.Wardrobe,
-        'worms' : envs.WormyApples,
+        'mealchoice': envs.MealChoice,
+        'pie_small': envs.SmallPieGridworld,
+        'redblue': envs.RedBlue,
+        'wardrobe': envs.Wardrobe,
+        'worms': envs.WormyApples,
     }
     return name_to_env_fn[env_name]
+
 
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
     hardcoded_policies = {
@@ -97,8 +99,6 @@ def save_results_to_gif(results, filename, fps=5, end_of_trajectory_pause=3):
             dataset.append(frame)
         for _ in range(end_of_trajectory_pause):
             dataset.append(frame)
-
-    import pdb; pdb.set_trace()
     write_gif(dataset, filename, fps=fps)
 
 
@@ -124,7 +124,10 @@ def run(env_name, env_kwargs, algo_name, seed=0, render=True, num_episodes=10, *
     print('\n Running algorithm {} with seed {}'.format(algo_name, seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
+    if render:
+        results = run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
+        # TODO saving to gif doesn't work yet
+        # save_results_to_gif(results, filename=f'{env_name}_{algo_name}_s{seed}.gif')
     env.close()
 
 
@@ -138,17 +141,22 @@ def str_to_dict(s):
     def convert(val):
         if val == 'True': return True
         if val == 'False': return False
-        try: return int(val)
-        except ValueError: pass
-        try: return float(val)
-        except ValueError: pass
+        try:
+            return int(val)
+        except ValueError:
+            pass
+        try:
+            return float(val)
+        except ValueError:
+            pass
         return val
 
     kvs = s.split(',')
     kv_pairs = [elem.split(':') for elem in kvs]
-    result = { x:convert(y) for x, y in kv_pairs }
+    result = {x: convert(y) for x, y in kv_pairs}
     print(result)
     return result
+
 
 def main():
     parser = ArgumentParser(description="Minimal script to solve and render an environment.")

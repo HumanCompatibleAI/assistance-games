@@ -7,7 +7,8 @@ import numpy as np
 import assistance_games.rendering as rendering
 from assistance_games.pyglet_rendering import Transform
 from assistance_games.core import AssistancePOMDP, UniformDiscreteDistribution, KroneckerDistribution
-from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_ellipse_renderer, Direction
+from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_ellipse_renderer, \
+    Direction
 from assistance_games.utils import get_asset
 
 
@@ -102,7 +103,6 @@ class AbstractRecipeGridworld(AssistancePOMDP):
             base_reward = 2
         elif next_state['recipe'] is not None:
             base_reward = -1
-        # TODO -state['T'] * 0.01 penalizes longer episodes in a weird way; what was a reason for doing it this way?
         return base_reward - state['T'] * 0.01 + shaping
 
     # Potential shaping. Finite horizon means the reward shaping
@@ -120,11 +120,13 @@ class AbstractRecipeGridworld(AssistancePOMDP):
         ingredient_bonuses = len(state['plate'])  # +1 for each correct plate ingredient
         ingredients_accounted_for = list(deepcopy(state['plate']))
         h_ingredient, r_ingredient = state['H']['hand'], state['R']['hand']
+
         # Ensure these ingredients are useful and unique
         def is_bad(hand):
             return (hand != self.EMPTY_HAND) and (hand in state['plate'] or hand not in goal_recipe)
+
         if is_bad(h_ingredient) or is_bad(r_ingredient) or \
-           (r_ingredient != self.EMPTY_HAND and h_ingredient == r_ingredient):
+                (r_ingredient != self.EMPTY_HAND and h_ingredient == r_ingredient):
             return 0
 
         if h_ingredient != self.EMPTY_HAND: ingredient_bonuses += 0.5
@@ -209,7 +211,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
                 for j, c in enumerate(formula):
                     img, tr = self.make_item_image_transform(c, scale=0.5)
                     img.add_attr(header_transform)
-                    tr.set_translation(hl*j, 1.2*hl*i)
+                    tr.set_translation(hl * j, 1.2 * hl * i)
                     self.gridworld.viewer.add_geom(img)
 
             ### Recipe objects for thought bubble
@@ -229,7 +231,6 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
         ### Render recipe in thought bubble
         self.gridworld.viewer.add_onetime(self.recipe_images[theta])
-
 
         ### Render hand content
         def render_hand(hand, player_transform):
@@ -260,7 +261,7 @@ class AbstractRecipeGridworld(AssistancePOMDP):
                 d = 7
                 dx = (-1) ** (j + 1) * d
                 dy = (-1) ** (j // 2) * d
-                item_coords = (lambda x, y: (x+dx, y+dy))(*plate_coords)
+                item_coords = (lambda x, y: (x + dx, y + dy))(*plate_coords)
 
                 transform.set_translation(*item_coords)
                 self.gridworld.viewer.add_onetime(item)
@@ -269,21 +270,22 @@ class AbstractRecipeGridworld(AssistancePOMDP):
 
 
 class CakeOrPieGridworld(AbstractRecipeGridworld):
-    def __init__(self, pedagogic: bool = True):
-        self.pedagogic = pedagogic
+    def __init__(self, pedagogic_human=True):
         layout = [
-            "XXPXX",
-            "C   B",
-            "D X X",
-            "X X X",
-            "X X X",
-            "XXXAX",
-        ][::-1]  # Reverse so that index 0 means what is visually the bottom row
+                     "XXPXX",
+                     "C   B",
+                     "D X X",
+                     "X X X",
+                     "X X X",
+                     "XXXAX",
+                 ][::-1]  # Reverse so that index 0 means what is visually the bottom row
         player_positions = {'R': (3, 1), 'H': (1, 3)}
         rendering_fns = {
             'H': [make_ellipse_renderer(scale_width=0.8, scale_height=0.56, offset=(1, 1), rgb_color=(0.9, 0.9, 0.9)),
-                  make_ellipse_renderer(scale_width=0.17, scale_height=0.12, offset=(0.6, 0.6), rgb_color=(0.9, 0.9, 0.9)),
-                  make_ellipse_renderer(scale_width=0.1, scale_height=0.07, offset=(0.4, 0.4), rgb_color=(0.9, 0.9, 0.9)),
+                  make_ellipse_renderer(scale_width=0.17, scale_height=0.12, offset=(0.6, 0.6),
+                                        rgb_color=(0.9, 0.9, 0.9)),
+                  make_ellipse_renderer(scale_width=0.1, scale_height=0.07, offset=(0.4, 0.4),
+                                        rgb_color=(0.9, 0.9, 0.9)),
                   make_image_renderer('images/girl1.png')],
             'R': [make_image_renderer('images/robot1.png')],
             'X': [make_cell_renderer((0.8, 0.75, 0.7))],
@@ -322,6 +324,7 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
         ingredients = ['A', 'B', 'C', 'D']
         # 50% recipe 0 (cake), 50% recipe 1 (pie)
         recipe_distribution = UniformDiscreteDistribution([0, 1])
+        self.pedagogic_human = pedagogic_human
         super().__init__(gridworld, initial_state, ingredients, recipes, recipe_distribution)
 
     def get_human_action_distribution(self, obsH, prev_aR, theta):
@@ -354,12 +357,13 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
         if obsH['H']['hand'] != self.EMPTY_HAND:
             return plan_to_interact('P')
 
-        # For cake, human pedagogically selects chocolate first
-        if self.pedagogic:
+        if self.pedagogic_human:
+            # For cake, human pedagogically selects chocolate first
             ingredient_order = ['C', 'D', 'B', 'A'] if theta == 0 else ['D', 'B']
         else:
+            # Unpedagogic baseline where human goes for the dough first as it's closer to her starting position
             ingredient_order = ['D', 'B', 'C', 'A'] if theta == 0 else ['D', 'B']
-        
+
         for ingredient in ingredient_order:
             if ingredient != obsH['R']['hand'] and ingredient not in obsH['plate']:
                 return plan_to_interact(ingredient)
@@ -369,6 +373,7 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
     def make_item_image_transform(self, item, scale=1):
 
         gw, gh = 200.0 / self.gridworld.width, 200.0 / self.gridworld.height
+
         def make_image_transform(filename, scale=1, w=1.0, h=None, c=None):
             if h is None: h = w
             fullname = get_asset(f'images/{filename}')
@@ -382,17 +387,18 @@ class CakeOrPieGridworld(AbstractRecipeGridworld):
             return img, transform
 
         mapping = {
-            'A' : partial(make_image_transform, 'sugar1.png', c=(0.9, 0.9, 0.9)),
-            'B' : partial(make_image_transform, 'cherry1.png'),
-            'C' : partial(make_image_transform, 'chocolate2.png'),
-            'D' : partial(make_image_transform, 'dough2.png'),
-            'P' : partial(make_image_transform, 'plate1.png', w=1.3, h=1.3),
-            '+' : partial(make_image_transform, 'plus1.png', w=0.5, h=0.5),
-            '=' : partial(make_image_transform, 'equal1.png', w=0.5, h=0.2),
-            0 : partial(make_image_transform, 'cake2.png', c=(0.8, 0.4, 0.1)),
-            1 : partial(make_image_transform, 'apple-pie1.png', c=(0.7, 0.3, 0.2)),
+            'A': partial(make_image_transform, 'sugar1.png', c=(0.9, 0.9, 0.9)),
+            'B': partial(make_image_transform, 'cherry1.png'),
+            'C': partial(make_image_transform, 'chocolate2.png'),
+            'D': partial(make_image_transform, 'dough2.png'),
+            'P': partial(make_image_transform, 'plate1.png', w=1.3, h=1.3),
+            '+': partial(make_image_transform, 'plus1.png', w=0.5, h=0.5),
+            '=': partial(make_image_transform, 'equal1.png', w=0.5, h=0.2),
+            0: partial(make_image_transform, 'cake2.png', c=(0.8, 0.4, 0.1)),
+            1: partial(make_image_transform, 'apple-pie1.png', c=(0.7, 0.3, 0.2)),
         }
         return mapping[item](scale=scale)
+
 
 def get_cake_or_pie_hardcoded_robot_policy(*args, **kwargs):
     class Policy:
@@ -409,7 +415,7 @@ def get_cake_or_pie_hardcoded_robot_policy(*args, **kwargs):
                 return STAY, 'ignored'
 
             if self.actions[0] == 'ob':
-                if ob[1][4][1] == 1.0: # H went towards chocolate
+                if ob[1][4][1] == 1.0:  # H went towards chocolate
                     self.actions = [I, N, N, N, W, N, I, E, I, W, N, I, I, I, I]
                 else:
                     self.actions = [N, N, N, E, I, W, N, I, I, I, I]

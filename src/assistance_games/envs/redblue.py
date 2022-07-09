@@ -5,6 +5,7 @@ import assistance_games.rendering as rendering
 from assistance_games.core import AssistancePOMDPWithMatrixSupport, UniformDiscreteDistribution, KroneckerDistribution
 from assistance_games.envs.gridworld import Gridworld, make_image_renderer, make_cell_renderer, make_ellipse_renderer
 
+
 class RedBlue(AssistancePOMDPWithMatrixSupport):
     """Red-blue problem. Fully observable assistance POMDP.
 

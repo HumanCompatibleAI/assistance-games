@@ -35,8 +35,16 @@ python -m assistance_games.run -e worms -a pbvi -k two_phase:True,discount:0.9
 
 Cake or pie environment (Section 4.3):
 ```
-python -m assistance_games.run -e cake_or_pie -a dqn -s 0 -nr -n 5000000 -o pedagogic_human
+python -m assistance_games.run -e cake_or_pie -a dqn -nr -o pedagogic_human --seed 0
 ```
+The five seeds used in the paper are 0 through 4.
+
+Running headless: use the ``xvfb-run -a`` command, e.g. for the cake or pie environment
+```
+xvfb-run -a python -m assistance_games.run -e cake_or_pie -a dqn -nr -o pedagogic_human --seed 0
+```
+
+Plotting deep RL training curves: use the ```src/assistance_games/plot_eval_stats.ipynb``` notebook.
 
 ## Overview of files:
 

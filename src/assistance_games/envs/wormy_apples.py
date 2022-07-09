@@ -155,7 +155,7 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
             print('Robot: {}'.format(prev_aR.name))
             print('Human: {}'.format(prev_aH.name))
         print('State: {}'.format(self.state_string(state)))
-        return
+        # return
         width = 5
         height = 3
 
@@ -175,14 +175,14 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
             return img, transform
 
         make_item_image = {
-            'apples': partial(make_image_transform, 'apples_TEMP.png'),
-            'apple': partial(make_image_transform, 'apple3.png'),
-            'wormy_apple': partial(make_image_transform, 'wormy_apple_TEMP.png'),
-            'trash': partial(make_image_transform, 'trash_TEMP.png'),
-            'compost': partial(make_image_transform, 'compost_TEMP.png'),
+            'apples': partial(make_image_transform, 'apples.png'),
+            'apple': partial(make_image_transform, 'apple_green1.png'),
+            'wormy_apple': partial(make_image_transform, 'wormy_apple.png'),
+            'trash': partial(make_image_transform, 'trash.png'),
+            'compost': partial(make_image_transform, 'compost.png'),
             'pie': partial(make_image_transform, 'apple-pie1.png'),
-            'oven': partial(make_image_transform, 'oven_TEMP.png'),
-            'question': partial(make_image_transform, 'question_mark_TEMP.png'),
+            'oven': partial(make_image_transform, 'plate1.png'),
+            'question': partial(make_image_transform, 'question_mark.png'),
         }
 
         if self.viewer is None:
@@ -297,7 +297,6 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
 
             self.viewer.add_geom(thought3)
 
-
             self.bins = []
             for bin_name in ('trash', 'compost'):
                 bin, _ = make_item_image[bin_name](s=0.4)
@@ -306,8 +305,9 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
                 self.bins.append(bin)
 
         human_pos = (4, 1)
+        plate_pos = (3, 1)
         robot_attributes = [
-            ((2, 1), ''),
+            ((0, 1), ''),
             ((0, 1), 'apple'),
             ((0, 1), 'wormy_apple'),
             ((1, 0), ''),
@@ -342,6 +342,7 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
 
         ### Render question asked by robot
         if question:
+            # TODO position question s.t. it never overlaps with human though bubble
             scale = 0.8
             speech = rendering.make_ellipse(scale * grid_side / 2, scale * 0.7 * grid_side / 2)
             speech.set_color(0.9, 0.9, 0.9)
@@ -353,14 +354,14 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
             self.viewer.add_onetime(speech)
 
             # triangle base
-            speech_triangle = rendering.make_triangle()
-            speech_triangle.set_color(0.9, 0.9, 0.9)
-            speech_triangle_transform = rendering.Transform()
-            speech_triangle_transform.set_translation(gs, gs)
-            speech_triangle.add_attr(speech_triangle_transform)
-            speech_triangle.add_attr(self.robot_transform)
-
-            self.viewer.add_onetime(speech_triangle)
+            # speech_triangle = rendering.make_triangle()
+            # speech_triangle.set_color(0.9, 0.9, 0.9)
+            # speech_triangle_transform = rendering.Transform()
+            # speech_triangle_transform.set_translation(gs, gs)
+            # speech_triangle.add_attr(speech_triangle_transform)
+            # speech_triangle.add_attr(self.robot_transform)
+            #
+            # self.viewer.add_onetime(speech_triangle)
 
             trash_q, transform = make_item_image['trash'](s=0.3)
             transform.set_translation(gs - 5, gs)
@@ -371,28 +372,12 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
             transform.set_translation(gs + 5, gs)
             q_mark.add_attr(self.robot_transform)
             self.viewer.add_onetime(q_mark)
-
+        # TODO add human response
         ### Render plate content
-        # TODO
-        """
-        if pie is not None:
-            for idx, recipe in enumerate(self.ag.recipes):
-                if pie == recipe:
-                    pie, transform = make_item_image[str(idx)](s=0.65)
-                    transform.set_translation(*plate_coords)
-                    self.viewer.add_onetime(pie)
-                    recipe_made = True
-                    break
-        else:
-            for j, item_name in enumerate(plate):
-                item, transform = make_item_image[item_name](s=0.4)
-                d = 7
-                dx = (-1) ** (j + 1) * d
-                dy = (-1) ** (j // 2) * d
-                item_coords = (lambda x, y: (x + dx, y + dy))(*plate_coords)
-                transform.set_translation(*item_coords)
-                self.viewer.add_onetime(item)
-        """
+        if self.state_string(state) == "Pie made":
+            pie, transform = make_item_image['pie'](s=0.4)
+            transform.set_translation(*self.grid.coords_from_pos(plate_pos))
+            self.viewer.add_onetime(pie)
 
         ### Render pie in thought bubble
         self.viewer.add_onetime(self.bins[preferred_idx])

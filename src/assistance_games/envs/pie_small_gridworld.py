@@ -51,7 +51,7 @@ class SmallPieGridworld(AssistancePOMDP):
             ('C',)
         ]
         self.ingredients = ['A', 'B', 'C']
-        self.ingredient_to_index = {v:i for i, v in enumerate(self.ingredients)}
+        self.ingredient_to_index = {v: i for i, v in enumerate(self.ingredients)}
         # position, hand + plate, human response
         num_dims = (self.gridworld.width-2) + (self.gridworld.height-2) + (2*len(self.ingredients)) + 1
         low = np.zeros(num_dims)
