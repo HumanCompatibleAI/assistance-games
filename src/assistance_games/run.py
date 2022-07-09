@@ -185,7 +185,7 @@ def main():
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
-    parser.add_argument('-n', '--total_timesteps', type=int, default=int(1.05e7))
+    parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e7))
     parser.add_argument('-m', '--num_runs', type=int, default=1)
     parser.add_argument('-p', '--num_episodes', type=int, default=10)
     parser.add_argument('-r', '--render', default=True, action='store_true')
