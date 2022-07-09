@@ -56,11 +56,6 @@ class POMDPPolicy:
         return action, state
 
 
-def maybe_todense(x):
-    """Convert a sparse matrix to dense if necessary."""
-    return x if isinstance(x, np.ndarray) else x.todense()
-
-
 def pbvi(pomdp, max_iter=3, num_beliefs=30, max_value_iter=30, limit_belief_expansion=True, **kwargs):
     """Value Iteration POMDP solver.
 
@@ -160,12 +155,12 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
             new_belief /= new_belief.sum()
             candidates.append(new_belief)
 
-        dists = distance_matrix([maybe_todense(x) for x in candidates], new_beliefs).min(axis=1)
+        dists = distance_matrix([force_dense(x) for x in candidates], new_beliefs).min(axis=1)
         idx = np.argmax(dists)
         dist = dists[idx]
 
         if dist > epsilon:
-            new_beliefs.append(maybe_todense(candidates[idx]))
+            new_beliefs.append(force_dense(candidates[idx]))
 
     return new_beliefs
 
