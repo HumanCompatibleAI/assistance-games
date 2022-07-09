@@ -8,9 +8,7 @@ import time
 
 import numpy as np
 
-from assistance_games.parser import read_pomdp
 from assistance_games.solver import pbvi, exact_vi, ppo_solve, dqn_solve, get_venv
-from assistance_games.utils import get_asset
 
 import assistance_games.envs as envs
 from assistance_games.core import (
@@ -18,6 +16,7 @@ from assistance_games.core import (
     ReducedAssistancePOMDPWithMatrices,
     ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices
 )
+
 
 def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_steps=100, render_mode='human'):
     if num_episodes == -1:
@@ -72,13 +71,14 @@ def run_environment(env, discount, policy=None, num_episodes=10, dt=0.01, max_st
 def get_env_fn(env_name):
     name_to_env_fn = {
         'cake_or_pie': envs.CakeOrPieGridworld,
-        'mealchoice' : envs.MealChoice,
-        'pie_small' : envs.SmallPieGridworld,
-        'redblue' : envs.RedBlue,
-        'wardrobe' : envs.Wardrobe,
-        'worms' : envs.WormyApples,
+        'mealchoice': envs.MealChoice,
+        'pie_small': envs.SmallPieGridworld,
+        'redblue': envs.RedBlue,
+        'wardrobe': envs.Wardrobe,
+        'worms': envs.WormyApples,
     }
     return name_to_env_fn[env_name]
+
 
 def get_hardcoded_policy(env, env_name, *args, **kwargs):
     hardcoded_policies = {
@@ -100,8 +100,6 @@ def save_results_to_gif(results, filename, fps=5, end_of_trajectory_pause=3):
             dataset.append(frame)
         for _ in range(end_of_trajectory_pause):
             dataset.append(frame)
-
-    import pdb; pdb.set_trace()
     write_gif(dataset, filename, fps=fps)
 
 
@@ -113,16 +111,15 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
             output_folder = env_name
         log_dir = os.path.join(log_dir_base, output_folder, algo_name + f'_seed{seed}')
     else:
-        log_dir_base = None
         log_dir = None
 
     algos = {
-        'exact' : exact_vi,
-        'pbvi' : pbvi,
-        'ppo' : partial(ppo_solve, log_dir=log_dir),
-        'dqn' : partial(dqn_solve, log_dir=log_dir),
-        'random' : lambda *args, **kwargs : None,
-        'hardcoded' : partial(get_hardcoded_policy, env_name=env_name),
+        'exact': exact_vi,
+        'pbvi': pbvi,
+        'ppo': partial(ppo_solve, log_dir=log_dir),
+        'dqn': partial(dqn_solve, log_dir=log_dir),
+        'random': lambda *args, **kwargs: None,
+        'hardcoded': partial(get_hardcoded_policy, env_name=env_name),
     }
     algo = algos[algo_name]
     env = get_env_fn(env_name)(**env_kwargs)
@@ -134,20 +131,22 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     else:
         env = ReducedAssistancePOMDPWithMatrices(env)
 
-    if algo_name == 'deeprl':
+    if algo_name in ['dqn', 'ppo']:
         # Set up logging
         if log_dir is not None:
             # This import can take 10+ seconds, so only do it if necessary
             from stable_baselines.bench import Monitor
             Path(log_dir).mkdir(parents=True, exist_ok=True)
             env = Monitor(env, log_dir)
+    if algo_name == "ppo":
         # Necessary for using LSTMs
         env = get_venv(env, n_envs=1)
 
     print('\n Running algorithm {} with seed {}'.format(algo_name, seed))
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
-    run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
+    if render:
+        run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
     env.close()
 
 
@@ -161,17 +160,22 @@ def str_to_dict(s):
     def convert(val):
         if val == 'True': return True
         if val == 'False': return False
-        try: return int(val)
-        except ValueError: pass
-        try: return float(val)
-        except ValueError: pass
+        try:
+            return int(val)
+        except ValueError:
+            pass
+        try:
+            return float(val)
+        except ValueError:
+            pass
         return val
 
     kvs = s.split(',')
     kv_pairs = [elem.split(':') for elem in kvs]
-    result = { x:convert(y) for x, y in kv_pairs }
+    result = {x: convert(y) for x, y in kv_pairs}
     print(result)
     return result
+
 
 def main():
     import argparse
@@ -181,7 +185,7 @@ def main():
     parser.add_argument('-a', '--algo_name', type=str, default='pbvi')
     parser.add_argument('-o', '--output_folder', type=str, default='')
     parser.add_argument('-s', '--seed', type=int, default=0)
-    parser.add_argument('-n', '--total_timesteps', type=int, default=int(1e6))
+    parser.add_argument('-n', '--total_timesteps', type=int, default=int(1.05e7))
     parser.add_argument('-m', '--num_runs', type=int, default=1)
     parser.add_argument('-p', '--num_episodes', type=int, default=10)
     parser.add_argument('-r', '--render', default=True, action='store_true')
