@@ -297,7 +297,6 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
 
             self.viewer.add_geom(thought3)
 
-
             self.bins = []
             for bin_name in ('trash', 'compost'):
                 bin, _ = make_item_image[bin_name](s=0.4)
@@ -308,7 +307,7 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
         human_pos = (4, 1)
         plate_pos = (3, 1)
         robot_attributes = [
-            ((2, 1), ''),
+            ((0, 1), ''),
             ((0, 1), 'apple'),
             ((0, 1), 'wormy_apple'),
             ((1, 0), ''),
