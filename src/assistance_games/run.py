@@ -146,7 +146,9 @@ def run(env_name, env_kwargs, algo_name, seed=0, logging=True, output_folder='',
     np.random.seed(seed)
     policy = algo(env, seed=seed, **kwargs)
     if render:
-        run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
+        results = run_environment(env, discount, policy, dt=0.5, num_episodes=num_episodes, render_mode='human')
+        # TODO saving to gif doesn't work yet
+        # save_results_to_gif(results, filename=f'{env_name}_{algo_name}_s{seed}.gif')
     env.close()
 
 
