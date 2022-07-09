@@ -176,7 +176,7 @@ class WormyApples(AssistancePOMDPWithMatrixSupport):
 
         make_item_image = {
             'apples': partial(make_image_transform, 'apples.png'),
-            'apple': partial(make_image_transform, 'apple_green.png'),
+            'apple': partial(make_image_transform, 'apple_green1.png'),
             'wormy_apple': partial(make_image_transform, 'wormy_apple.png'),
             'trash': partial(make_image_transform, 'trash.png'),
             'compost': partial(make_image_transform, 'compost.png'),
