@@ -56,7 +56,8 @@ class ReducedAssistancePOMDPWithMatrices(ReducedAssistancePOMDP):
     typing rather than deal with multiple inheritance.
     """
     def __init__(self, apomdp):
-        assert hasattr(apomdp, 'nS') and hasattr(apomdp, 'nOR') and hasattr(apomdp, 'nAH') and hasattr(apomdp, 'nAR')
+        assert hasattr(apomdp, 'nS') and hasattr(apomdp, 'nOR') and hasattr(apomdp, 'nAH') and hasattr(apomdp, 'nAR'), \
+            "This environment does not support PBVI and exact VI solvers, and only works with deep RL."
         super().__init__(apomdp)
         print('Creating T, R and O matrices')
         self._create_matrices()
