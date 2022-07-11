@@ -1,6 +1,4 @@
-This codebase accompanies the paper "Benefits of Assistance over Reward Learning". 
-
-This branch can be used to reproduce the experiments from the paper, and uses deep RL solvers from [Stable Baselines 2](https://stable-baselines.readthedocs.io/en/master/) (based on TensorFlow 1). 
+This codebase accompanies the paper "Benefits of Assistance over Reward Learning". This branch can be used to reproduce the experiments from the paper, and uses deep RL solvers from [Stable Baselines 2](https://stable-baselines.readthedocs.io/en/master/) (based on TensorFlow 1). 
 The `sb3` branch is a port of our codebase to PyTorch-based [Stable Baselines 3](https://stable-baselines3.readthedocs.io/en/master/).
 
 ## How to run the code
