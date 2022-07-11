@@ -344,7 +344,7 @@ def compute_obs_alphas(pomdp, alphas):
     for a in range(nA):
         for o in range(nO):
             sparse = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
-            obs_alphas[a, o] = maybe_todense(sparse)
+            obs_alphas[a, o] = force_dense(sparse)
     return obs_alphas
 
 
