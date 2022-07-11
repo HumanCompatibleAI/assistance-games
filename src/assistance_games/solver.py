@@ -22,7 +22,6 @@ from scipy.spatial import distance_matrix
 
 import cvxpy as cp
 
-from assistance_games.core import TabularBackwardSensorModel
 from assistance_games.utils import sample_distribution, uniform_simplex_sample, force_dense
 
 Alpha = namedtuple('Alpha', ['vector', 'action'])
@@ -30,45 +29,65 @@ Alpha = namedtuple('Alpha', ['vector', 'action'])
 
 class POMDPPolicy:
     """Policy from alpha vectors provided by POMDP solvers"""
-    def __init__(self, alphas):
-        self.alpha_vectors = []
-        self.alpha_actions = []
-        for vec, act in alphas:
-            self.alpha_vectors.append(vec)
-            self.alpha_actions.append(act)
+    def __init__(self, alphas, pomdp):
+        self.pomdp = pomdp
+        self.alpha_vectors = np.stack([vec for vec, _ in alphas])
+        self.alpha_actions = np.stack([act for _, act in alphas])
 
-    def predict(self, belief, state=None, deterministic=True):
-        idx = np.argmax(self.alpha_vectors @ belief)
-        return self.alpha_actions[idx], state
+    def predict(self, obs, state=None, deterministic=True):
+        # For a POMDP, the state of the policy is just its belief
+        if state is None:
+            state = self.pomdp.numpy_initial_state_distribution()
+
+        # Update on new observation
+        state = state * self.pomdp._O[:, obs]
+
+        # Choose best action
+        idx = np.argmax(self.alpha_vectors @ state)
+        action = self.alpha_actions[idx]
+
+        # Propagate belief forward in time
+        T = self.pomdp.get_transition_matrix()
+        state = state @ T[:, action, :]
+
+        # Normalize
+        state /= state.sum()
+
+        return action, state
 
 
-def pomdp_value_iteration(
-    pomdp,
-    *,
-    expand_beliefs_fn,
-    value_backup_fn,
-    max_iter=3,
-    num_beliefs=30,
-    max_value_iter=30,
-    limit_belief_expansion=True,
-    **kwargs,
-):
+def pbvi(pomdp, max_iter=3, num_beliefs=30, max_value_iter=30, limit_belief_expansion=True, **kwargs):
     """Value Iteration POMDP solver.
 
     Implements different exact or approximate solvers, differing on how
     beliefs are selected (if any), and how alpha values are updated.
     """
     num_value_iter = min(max_value_iter, get_effective_horizon(pomdp))
-    nS = pomdp.state_space.n
+    nS = pomdp.get_num_states()
 
     beliefs = None
     alphas = [Alpha(np.zeros(nS), None)]
-    for _ in range(max_iter):
-        beliefs = expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
-        for _ in range(num_value_iter):
-            alphas = value_backup_fn(pomdp, alphas, beliefs)
+    for i in range(max_iter):
+        print("Iteration {}/{}".format(i, max_iter))
+        beliefs = pbvi_expand_beliefs_fn(pomdp, beliefs, num_beliefs, limit_belief_expansion=limit_belief_expansion)
+        for j in range(num_value_iter):
+            # print("Value iter {}/{}".format(j, num_value_iter))
+            alphas = point_based_value_backup(pomdp, alphas, beliefs)
 
-    return POMDPPolicy(alphas)
+    return POMDPPolicy(alphas, pomdp)
+
+
+def exact_vi(pomdp, max_value_iter=30, **kwargs):
+    num_value_iter = min(max_value_iter, get_effective_horizon(pomdp))
+    nS = pomdp.get_num_states()
+    alphas = [Alpha(np.zeros(nS), None)]
+    for i in range(num_value_iter):
+        print("Iteration {}/{}".format(i, num_value_iter))
+        alphas = exact_value_backup(pomdp, alphas)
+        print("There are now {} alpha vectors".format(len(alphas)))
+
+    return POMDPPolicy(alphas, pomdp)
+
 
 def get_effective_horizon(pomdp, epsilon=1e-3):
     """Effective horizon for the POMDP.
@@ -80,14 +99,10 @@ def get_effective_horizon(pomdp, epsilon=1e-3):
         return pomdp.horizon
     else:
         disc = pomdp.discount
-        R = pomdp.reward_model.R
+        R = pomdp.get_reward_matrix()
         R_range = R.max() - R.min()
         num_iters = int(np.ceil(np.log(epsilon / R_range) // np.log(disc)))
         return num_iters
-
-
-def none_expand_beliefs_fn(*args, **kwargs):
-    return None
 
 
 def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_expansion=True):
@@ -97,6 +112,7 @@ def pbvi_expand_beliefs_fn(pomdp, beliefs=None, num_beliefs=50, limit_belief_exp
         max_new_beliefs = num_beliefs if limit_belief_expansion else None
         return density_expand_beliefs(pomdp, beliefs, max_new_beliefs)
 
+
 def sample_random_beliefs(pomdp, num_beliefs):
     """Mixed sampling for beliefs.
 
@@ -104,13 +120,14 @@ def sample_random_beliefs(pomdp, num_beliefs):
     the other half by sampling a beta in [0, 4], and applying 
     softmax to a point uniformly sampled from [0, 1]**n.
     """
-    num_states = pomdp.state_space.n
+    num_states = pomdp.get_num_states()
     logits = np.random.randn(num_beliefs // 2, num_states)
     betas = 4 * np.random.rand(num_beliefs // 2, 1)
     beliefs = softmax(betas * logits, axis=1)
     unif = np.stack([uniform_simplex_sample(num_states) for _ in range(num_beliefs - num_beliefs // 2)])
     beliefs = np.concatenate([beliefs, unif], axis=0)
     return beliefs
+
 
 def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     """Expand belief set by sampling next beliefs.
@@ -122,8 +139,9 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
     If max_new_beliefs is not None, then len(new_beliefs) <= max_new_beliefs + len(beliefs).
     """
     num_beliefs = len(beliefs)
-    nA = pomdp.action_space.n
-    T = pomdp.transition_model.T
+    nA = pomdp.get_num_actions()
+    T = pomdp.get_transition_matrix()
+    O = pomdp.get_observation_matrix()
     new_beliefs = list(beliefs)
     for i in np.random.permutation(num_beliefs)[:max_new_beliefs]:
         belief = beliefs[i]
@@ -131,21 +149,23 @@ def density_expand_beliefs(pomdp, beliefs, max_new_beliefs=None, epsilon=1e-2):
         for action in range(nA):
             state = sample_distribution(belief)
             next_state = sample_distribution(T[state, action])
-            ob = pomdp.sensor_model.sample_sense(action=action, state=state, next_state=next_state)
-            new_belief = pomdp.sensor_model.update_belief(belief, action, ob)
+            ob = sample_distribution(O[next_state, :])
+            new_belief = belief @ T[:, action, :]
+            new_belief = new_belief * O[:, ob]
+            new_belief /= new_belief.sum()
             candidates.append(new_belief)
 
-        dists = distance_matrix(candidates, new_beliefs).min(axis=1)
+        dists = distance_matrix([force_dense(x) for x in candidates], new_beliefs).min(axis=1)
         idx = np.argmax(dists)
         dist = dists[idx]
 
         if dist > epsilon:
-            new_beliefs.append(candidates[idx])
+            new_beliefs.append(force_dense(candidates[idx]))
 
     return new_beliefs
 
 
-def exact_value_backup(pomdp, alphas, *args, **kwargs):
+def exact_value_backup(pomdp, alphas):
     """Performs exact value backup.
 
     This consists of the following phases:
@@ -154,10 +174,10 @@ def exact_value_backup(pomdp, alphas, *args, **kwargs):
         ii - Compute the new alphas for each action and observation |-> alpha_i mapping.
     2 - Prune alphas that are dominated (i.e. not used for any possible belief).
     """
-    nA = pomdp.action_space.n
+    nA = pomdp.get_num_actions()
 
-    T = pomdp.transition_model.T
-    R = pomdp.reward_model.R
+    T = pomdp.get_transition_matrix()
+    R = pomdp.get_reward_matrix()
     R = force_dense(np.sum(R * T, axis=2))
 
     obs_alphas = compute_obs_alphas(pomdp, alphas)
@@ -171,6 +191,7 @@ def exact_value_backup(pomdp, alphas, *args, **kwargs):
     new_alphas = prune_alphas(new_alphas)
     return new_alphas
 
+
 def cross_sums(V, v0):
     """Returns (v0 + sum(V[i][p[i]] for i in range(n)) for p in permutations(n))."""
     if V.shape[0] == 0:
@@ -179,6 +200,7 @@ def cross_sums(V, v0):
         for vec in cross_sums(V[1:], v0):
             for val in V[0]:
                 yield vec + val
+
 
 def prune_alphas(alpha_pairs):
     """Removes alphas not used for any possible belief.
@@ -294,7 +316,6 @@ def prune_alphas(alpha_pairs):
             'the code.'
         )
 
-
     successes = []
     queue = alpha_pairs
 
@@ -309,13 +330,11 @@ def prune_alphas(alpha_pairs):
 
 
 def compute_obs_alphas(pomdp, alphas):
-    nS = pomdp.state_space.n
-    nA = pomdp.action_space.n
+    nS = pomdp.get_num_states()
+    nA = pomdp.get_num_actions()
     disc = pomdp.discount
-    T = pomdp.transition_model.T
-
-    use_back_sensor = isinstance(pomdp.sensor_model, TabularBackwardSensorModel)
-    O = pomdp.sensor_model.sensor if not use_back_sensor else pomdp.sensor_model.back_sensor
+    T = pomdp.get_transition_matrix()
+    O = pomdp.get_observation_matrix()
     nO = O.shape[-1]
 
     alpha_vecs = [alpha.vector for alpha in alphas]
@@ -324,15 +343,12 @@ def compute_obs_alphas(pomdp, alphas):
     alpha_matrix = np.array(alpha_vecs).T
     for a in range(nA):
         for o in range(nO):
-            if use_back_sensor:
-                obs_alphas[a, o] = disc * (O[a, :, o] * (T[:, a] @ alpha_matrix).T)
-            else:
-                obs_alphas[a, o] = disc * (T[:, a] @ (O[a, :, o, None] * alpha_matrix)).T
+            sparse = disc * (T[:, a] @ (O[:, o, None] * alpha_matrix)).T
+            obs_alphas[a, o] = force_dense(sparse)
     return obs_alphas
 
 
-
-def point_based_value_backup(pomdp, alphas, beliefs=None, use_back_sensor=False):
+def point_based_value_backup(pomdp, alphas, beliefs=None):
     """Performs approximate value backup by tracking a finite set of beliefs.
 
     This consists of the following phases:
@@ -342,15 +358,13 @@ def point_based_value_backup(pomdp, alphas, beliefs=None, use_back_sensor=False)
              for each observation using the belief b.
     2 - For each belief, select the alpha that maximizes expected reward.
     """
-    nS = pomdp.state_space.n
-    nA = pomdp.action_space.n
-    T = pomdp.transition_model.T
-
-    use_back_sensor = isinstance(pomdp.sensor_model, TabularBackwardSensorModel)
-    O = pomdp.sensor_model.sensor if not use_back_sensor else pomdp.sensor_model.back_sensor
+    nS = pomdp.get_num_states()
+    nA = pomdp.get_num_actions()
+    T = pomdp.get_transition_matrix()
+    O = pomdp.get_observation_matrix()
     nO = O.shape[-1]
 
-    R = pomdp.reward_model.R
+    R = pomdp.get_reward_matrix()
     R = force_dense(np.sum(R * T, axis=2))
 
     def compute_action_alphas(obs_alphas, beliefs):
@@ -376,28 +390,17 @@ def point_based_value_backup(pomdp, alphas, beliefs=None, use_back_sensor=False)
     return new_alphas
 
 
-pbvi = functools.partial(
-    pomdp_value_iteration,
-    expand_beliefs_fn=pbvi_expand_beliefs_fn,
-    value_backup_fn=point_based_value_backup,
-)
-exact_vi = functools.partial(
-    pomdp_value_iteration,
-    expand_beliefs_fn=none_expand_beliefs_fn,
-    value_backup_fn=exact_value_backup,
-)
-
-
-def deep_rl_solve(
+def ppo_solve(
     pomdp,
     total_timesteps=1000000,
     learning_rate=1e-3,
-    use_lstm=True,
+    use_lstm=False,
     seed=0,
     log_dir=None,
 ):
     from stable_baselines import PPO2
     from stable_baselines.common.policies import MlpPolicy, MlpLstmPolicy
+    from stable_baselines.common.callbacks import EvalCallback
 
     if use_lstm:
         policy = PPO2(MlpLstmPolicy,
@@ -410,15 +413,46 @@ def deep_rl_solve(
                       seed=seed,
                       n_cpu_tf_sess=8)
     else:
-        policy = PPO2(MlpPolicy, pomdp, learning_rate=learning_rate, seed=seed)
-    policy.learn(total_timesteps=total_timesteps)
+        policy = PPO2(MlpPolicy,
+                      pomdp,
+                      policy_kwargs=dict(net_arch=[256, 256]),
+                      # learning_rate=learning_rate,
+                      seed=seed,
+                      gamma=0.99,
+                      n_steps=1024,
+                      n_cpu_tf_sess=8)
+    eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
+                                 eval_freq=10000, n_eval_episodes=100)
+    policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
     return policy
 
+
+def dqn_solve(
+    pomdp,
+    total_timesteps=10_000_000,
+    learning_rate=3e-5,
+    seed=0,
+    log_dir=None,
+    tensorboard_log=None,
+    **kwargs,
+):
+    from stable_baselines import DQN
+    from stable_baselines.common.callbacks import EvalCallback
+
+    eval_callback = EvalCallback(pomdp, best_model_save_path=log_dir, log_path=log_dir, deterministic=True,
+                                 eval_freq=50000, n_eval_episodes=10)
+    policy = DQN("MlpPolicy", pomdp, learning_rate=learning_rate, seed=seed, n_cpu_tf_sess=4,
+                 tensorboard_log=tensorboard_log, prioritized_replay=True, policy_kwargs={'layers': [128, 128]},
+                 exploration_fraction=0.8)
+    policy.learn(total_timesteps=total_timesteps, callback=eval_callback)
+    return policy
+
+
 def get_venv(env, n_envs=1):
-    """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary.
-    """
-    from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv
+    """Simple wrapper to avoid importing stable-baselines and tensorflow when unnecessary."""
+    from stable_baselines.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
     if n_envs == 1:
-        return DummyVecEnv([lambda : env])
+        new_env = DummyVecEnv([lambda: env])
     else:
-        return SubprocVecEnv([(lambda : env) for _ in range(n_envs)])
+        new_env = SubprocVecEnv([(lambda: env) for _ in range(n_envs)])
+    return VecNormalize(new_env)

@@ -1,4 +1,8 @@
-from assistance_games.core.builders import *
-from assistance_games.core.core import *
-from assistance_games.core.human_policies import *
-from assistance_games.core.models import *
+from assistance_games.core.assistance import AssistancePOMDP, AssistancePOMDPWithMatrixSupport
+from assistance_games.core.distributions import *
+from assistance_games.core.pomdp import POMDP, POMDPWithMatrices
+from assistance_games.core.reduction import (
+    ReducedAssistancePOMDP,
+    ReducedAssistancePOMDPWithMatrices,
+    ReducedFullyObservableDeterministicAssistancePOMDPWithMatrices,
+)

@@ -16,13 +16,7 @@ from gym.spaces import Discrete
 from functools import partial
 
 
-from assistance_games.core import (
-    POMDP,
-    DiscreteDistribution,
-    TabularTransitionModel,
-    TabularForwardSensorModel,
-    BeliefRewardModel,
-)
+from assistance_games.core import DiscreteDistribution
 
 pomdp_parser = Lark(r"""
     pomdp_file: preamble param_list
@@ -127,6 +121,7 @@ class TreeToPOMDP(Transformer):
 
         initial_state_distribution = preamble.get('start', 'uniform')
         initial_state_distribution = process_matrix(initial_state_distribution, (num_states,))
+        initial_state_distribution = DiscreteDistribution(initial_state_distribution)
 
         T = np.zeros((num_states, num_actions, num_states))
         R = np.zeros((num_states, num_actions, num_states))
@@ -203,24 +198,9 @@ class TreeToPOMDP(Transformer):
             R[state, act, next_state] = val
 
 
-        state_space = DiscreteDistribution(num_states, initial_state_distribution)
-        action_space = Discrete(num_actions)
-
-        transition_model_fn = partial(TabularTransitionModel, transition_matrix=T)
-        sensor_model_fn = partial(TabularForwardSensorModel, sensor=O)
-        reward_model_fn = partial(BeliefRewardModel, reward_matrix=R)
-
-
-        return POMDP(
-            state_space=state_space,
-            action_space=action_space,
-            discount=discount,
-            horizon=None,
-
-            transition_model_fn=transition_model_fn,
-            reward_model_fn=reward_model_fn,
-            sensor_model_fn=sensor_model_fn,
-        )
+        # We assume observations depend only on state
+        assert all((O[0] == O[i]).all() for i in range(num_actions)), "Observations must depend only on state"
+        return T, R, O[0], discount, initial_state_distribution
 
     def preamble(self, items):
         headers = {}

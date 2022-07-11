@@ -4,14 +4,14 @@ from gym.spaces import Discrete
 import numpy as np
 
 from assistance_games.core import (
-    POMDP,
+    POMDPWithMatrices, UniformDiscreteDistribution
 )
 
 from assistance_games.parser import read_pomdp
 from assistance_games.utils import get_asset
 
 
-class TwoStatePOMDP(POMDP):
+class TwoStatePOMDP(POMDPWithMatrices):
     """Russell and Norvig's two-state POMDP.
 
     There is a reward of +1 for staying in the second state,
@@ -21,33 +21,24 @@ class TwoStatePOMDP(POMDP):
     There is a 0.3 chance of getting the wrong state as observation,
     and a 0.1 chance of moving to the wrong state.
     """
-    def __init__(self):
-        self.state_space = Discrete(2)
-        self.action_space = Discrete(2)
-        self.sensor_space = Discrete(2)
-
-        noise = 0.3
-
-        self.sensor = np.array(
-            [[1.0 - noise, noise      ],
-             [noise      , 1.0 - noise]]
+    def __init__(self, obs_noise=0.3, act_noise=0.1, horizon=4):
+        O = np.array(
+            [[1.0 - obs_noise, obs_noise      ],
+             [obs_noise      , 1.0 - obs_noise]]
         )
 
-        act_noise = 0.1
+        T = np.zeros((2, 2, 2))
+        T[:, 0, :] = (1 - act_noise) * np.eye(2) + act_noise * np.eye(2)[[1, 0]]
+        T[:, 1, :] = act_noise * np.eye(2) + (1 - act_noise) * np.eye(2)[[1, 0]]
 
-        self.transition = np.zeros((2, 2, 2))
-        self.transition[:, 0, :] = (1 - act_noise) * np.eye(2) + act_noise * np.eye(2)[[1, 0]]
-        self.transition[:, 1, :] = act_noise * np.eye(2) + (1 - act_noise) * np.eye(2)[[1, 0]]
-
-        self.horizon = 4
-
-        self.rewards = np.array([0, 1])
+        R = np.zeros((2, 2, 2))
+        R[1, :, :] = 1
         
-        self.initial_state = np.array([0.5, 0.5])
-        self.initial_belief = np.array([0.5, 0.5])
+        init_state_dist = UniformDiscreteDistribution([0, 1])
+        super().__init__(T, R, O, discount=0.9, horizon=horizon, init_state_dist=init_state_dist)
 
 
-class FourThreeMaze(POMDP):
+class FourThreeMaze(POMDPWithMatrices):
     """Russell and Norvig's 4x3 maze
 
     The maze looks like this:
@@ -83,14 +74,13 @@ class FourThreeMaze(POMDP):
     good = +1 reward, bad = -1 penalty, 
     """
 
-    def __init__(self, *args, terminal=False, horizon=None, **kwargs):
+    def __init__(self, *args, terminal=False, horizon=20, **kwargs):
         if terminal:
-            pomdp = read_pomdp(get_asset('pomdps/four-three-terminal.pomdp'))
+            T, R, O, discount, dist = read_pomdp(get_asset('pomdps/four-three-terminal.pomdp'))
         else:
-            pomdp = read_pomdp(get_asset('pomdps/four-three.pomdp'))
-        self.__dict__ = pomdp.__dict__
-        if horizon is not None:
-            self.horizon = horizon
+            T, R, O, discount, dist = read_pomdp(get_asset('pomdps/four-three.pomdp'))
+
+        super().__init__(T, R, O, discount=discount, horizon=horizon, init_state_dist=dist)
         self.viewer = None
 
     def render(self, mode='human'):
@@ -135,11 +125,9 @@ class FourThreeMaze(POMDP):
             bar.set_color(0.7, 0.3, 0.3)
             self.viewer.add_onetime(bar)
 
-        for state, ratio in enumerate(self.belief):
-            add_bar(state, ratio)
+        # for state, ratio in enumerate(self.belief):
+        #     add_bar(state, ratio)
         
         self.agent_transform.set_translation(*self.coords_from_state(self.state))
 
         self.viewer.render(return_rgb_array = mode=='rgb_array')
-
-        return None
